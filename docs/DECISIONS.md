@@ -86,6 +86,11 @@
 - Officer scope se-divisi di list + decide + adjust + histori meeting; tanpa self-approval.
 - UI: 2FA di profil + login (admin & mobile), filter angkatan, riwayat barang.
 
+## Turnstile login admin (2026-10-06)
+- Widget + verifikasi server di BFF (secret tak keluar browser); token tak diteruskan ke API.
+- Tanpa secret = tolak, kecuali `TURNSTILE_DISABLED=true` (dev lokal saja).
+- Cloudflare test keys tersedia untuk staging (sitekey 1x000... + secret 1x000...).
+
 ## Rollout 150 anggota (2026-10-06)
 - Throttle dua ember (IP 600 + user 60/mnt) agar wifi kampus tak saling blokir; sub JWT hanya kunci.
 - Volume `uploads` + cron tar (pg_dump tak mencakup file); rencana rollout bertahap di DEPLOY.md.

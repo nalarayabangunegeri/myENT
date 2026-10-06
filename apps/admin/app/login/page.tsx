@@ -1,6 +1,14 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+
+declare global {
+  interface Window {
+    turnstile?: { getResponse: () => string; reset: () => void };
+  }
+}
+
+const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
 
 export default function Login() {
   const [nim, setNim] = useState('');
@@ -11,14 +19,25 @@ export default function Login() {
   const [err, setErr] = useState('');
   const router = useRouter();
 
+  useEffect(() => {
+    if (!SITE_KEY || document.getElementById('cf-script')) return;
+    const s = document.createElement('script');
+    s.id = 'cf-script';
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    s.async = true;
+    document.body.appendChild(s);
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr('');
+    const token = window.turnstile?.getResponse() ?? '';
     const r = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ nim, password }),
+      body: JSON.stringify({ nim, password, 'cf-turnstile-response': token }),
     });
+    window.turnstile?.reset();
     const d = await r.json();
     if (!r.ok) return setErr(d.message ?? 'Gagal login');
     if (d.twoFactorRequired) return setNeed2fa(d.pendingToken);
@@ -81,6 +100,11 @@ export default function Login() {
         <form onSubmit={submit} className="flex flex-col gap-2">
           <input className="border p-2 rounded" placeholder="NIM" value={nim} onChange={(e) => setNim(e.target.value)} />
           <input className="border p-2 rounded" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          {SITE_KEY ? (
+            <div className="cf-turnstile" data-sitekey={SITE_KEY} />
+          ) : (
+            <p className="text-xs text-yellow-700">Turnstile belum dikonfigurasi (dev saja).</p>
+          )}
           <button className="bg-blue-600 text-white p-2 rounded">Masuk</button>
         </form>
       ) : (
