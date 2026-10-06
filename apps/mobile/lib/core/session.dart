@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // Token di secure storage (AGENTS §14). Refresh dirotasi server.
+// ponytail: default v11 = EncryptedSharedPreferences (AES-GCM). Tanpa opsi tambahan.
 class Session {
   static const _s = FlutterSecureStorage();
   static Future<String?> get access => _s.read(key: 'access');

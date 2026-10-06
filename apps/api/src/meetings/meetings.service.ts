@@ -170,7 +170,7 @@ export class MeetingsService {
   async tryTickLock(): Promise<boolean> {
     const r = (await this.prisma.$queryRawUnsafe(
       `SELECT pg_try_advisory_lock(hashtext('meeting-tick')) AS ok`,
-    ).catch(() => [{ ok: true }])) as any[];
+    ).catch(() => [{ ok: false }])) as any[];
     return !!r[0]?.ok;
   }
 

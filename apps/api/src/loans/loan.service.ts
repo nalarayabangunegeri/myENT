@@ -73,18 +73,19 @@ export class LoanService {
   }
 
   async borrow(user: any, itemId: string, dueAt: Date, noteOut: string, photo: Buffer) {
-    const item = await this.prisma.item.findUnique({ where: { id: itemId } });
-    if (!item) throw new NotFoundException('Barang tidak ditemukan');
-    if (item.status !== 'AVAILABLE') throw new ConflictException(`Barang ${item.status === 'BORROWED' ? 'sedang dipinjam' : 'dalam perawatan'}`);
     if (!(dueAt instanceof Date) || isNaN(+dueAt) || dueAt <= new Date()) throw new BadRequestException('Tenggat harus di masa depan');
-    const max = await this.config.get<number>('max_active_loans_per_member');
-    const active = await this.prisma.loan.count({ where: { borrowerId: user.id, status: { in: ['ACTIVE', 'OVERDUE'] } } });
-    if (active >= max) throw new BadRequestException(`Maksimal ${max} pinjaman aktif`);
     await this.checkPhoto(photo);
     const key = this.photoKey(itemId);
     await this.storage.save(key, photo, 'image/jpeg');
     try {
       const loan = await this.prisma.$transaction(async (tx: any) => {
+        // Cek di dalam tx: jendela balapan menyempit; P2002 tetap jaring terakhir.
+        const item = await tx.item.findUnique({ where: { id: itemId } });
+        if (!item) throw new NotFoundException('Barang tidak ditemukan');
+        if (item.status !== 'AVAILABLE') throw new ConflictException(`Barang ${item.status === 'BORROWED' ? 'sedang dipinjam' : 'dalam perawatan'}`);
+        const max = await this.config.get<number>('max_active_loans_per_member');
+        const active = await tx.loan.count({ where: { borrowerId: user.id, status: { in: ['ACTIVE', 'OVERDUE'] } } });
+        if (active >= max) throw new BadRequestException(`Maksimal ${max} pinjaman aktif`);
         const l = await tx.loan.create({
           data: {
             itemId, borrowerId: user.id,
@@ -141,22 +142,32 @@ export class LoanService {
     return { ok: true };
   }
 
-  async myList(userId: string) {
-    return this.prisma.loan.findMany({
-      where: { borrowerId: userId },
-      include: { item: { select: { id: true, name: true, code: true } } },
-      orderBy: { borrowedAt: 'desc' },
-      take: 100,
-    });
+  async myList(userId: string, page = 1, limit = 20) {
+    const where = { borrowerId: userId };
+    const [total, data] = await Promise.all([
+      this.prisma.loan.count({ where }),
+      this.prisma.loan.findMany({
+        where,
+        include: { item: { select: { id: true, name: true, code: true } } },
+        orderBy: { borrowedAt: 'desc' },
+        skip: (page - 1) * limit, take: Math.min(limit, 100),
+      }),
+    ]);
+    return { page, limit, total, data };
   }
 
-  async list(status?: string) {
-    return this.prisma.loan.findMany({
-      where: status ? { status: status as any } : {},
-      include: { item: { select: { id: true, name: true, code: true } } },
-      orderBy: { borrowedAt: 'desc' },
-      take: 200,
-    });
+  async list(status?: string, page = 1, limit = 20) {
+    const where = status ? { status: status as any } : {};
+    const [total, data] = await Promise.all([
+      this.prisma.loan.count({ where }),
+      this.prisma.loan.findMany({
+        where,
+        include: { item: { select: { id: true, name: true, code: true } } },
+        orderBy: { borrowedAt: 'desc' },
+        skip: (page - 1) * limit, take: Math.min(limit, 100),
+      }),
+    ]);
+    return { page, limit, total, data };
   }
 
   async photoUrl(user: any, id: string, which: string, baseUrl: string) {

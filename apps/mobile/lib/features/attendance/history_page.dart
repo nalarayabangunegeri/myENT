@@ -15,16 +15,31 @@ class _HistoryPageState extends State<HistoryPage> {
   Map? rekap;
   Map? piket;
   List tugasPiket = [];
+  String? err;
   @override
   void initState() {
     super.initState();
-    Api.get(
-      '/attendance/recap/me',
-    ).then((r) => setState(() => rekap = r)).catchError((_) {});
-    Api.get('/duty/summary/me').then((r) => setState(() => piket = r)).catchError((_) {});
-    Api.get('/duty/assignments/me').then((list) {
-      setState(() => tugasPiket = (list as List).where((a) => a['meeting']?['status'] == 'PUBLISHED' || a['meeting']?['status'] == 'ONGOING').toList());
-    }).catchError((_) {});
+    _load();
+  }
+
+  Future<void> _load() async {
+    final results = await Future.wait([
+      Api.get('/attendance/recap/me').catchError((e) => e),
+      Api.get('/duty/summary/me').catchError((e) => e),
+      Api.get('/duty/assignments/me').catchError((e) => e),
+    ]);
+    if (!mounted) return;
+    if (results[0] is ApiException) {
+      setState(() => err = (results[0] as ApiException).message);
+      return;
+    }
+    setState(() {
+      rekap = results[0];
+      if (results[1] is Map) piket = results[1];
+      if (results[2] is List) {
+        tugasPiket = (results[2] as List).where((a) => a['meeting']?['status'] == 'PUBLISHED' || a['meeting']?['status'] == 'ONGOING').toList();
+      }
+    });
   }
 
   Future<void> bagikan() async {
@@ -46,8 +61,14 @@ class _HistoryPageState extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (err != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Riwayat')),
+        body: Center(child: Text(err!, semanticsLabel: 'Gagal memuat riwayat')),
+      );
+    }
     final r = rekap;
-    if (r == null) return const Scaffold(body: Center(child: Text('Memuat…')));
+    if (r == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final hist = (r['history'] as List?) ?? [];
     return Scaffold(
       appBar: AppBar(
@@ -56,9 +77,11 @@ class _HistoryPageState extends State<HistoryPage> {
           IconButton(icon: const Icon(Icons.share), onPressed: bagikan),
         ],
       ),
-      body: hist.isEmpty
-          ? const Center(child: Text('Belum ada riwayat'))
-          : ListView(
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: hist.isEmpty && tugasPiket.isEmpty
+            ? ListView(children: const [Center(child: Text('Belum ada riwayat'))])
+            : ListView(
               children: [
                 ListTile(
                   title: Text(
@@ -93,6 +116,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
               ],
             ),
+      ),
     );
   }
 }

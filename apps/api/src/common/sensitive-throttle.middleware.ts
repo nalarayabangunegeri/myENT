@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 
 // Rate limit generik in-process untuk endpoint sensitif (PRD §18).
@@ -29,14 +29,16 @@ export class SensitiveThrottleMiddleware implements NestMiddleware {
     return arr.length > limit;
   }
 
-  use(req: Request, _res: Response, next: NextFunction) {
+  use(req: Request, res: Response, next: NextFunction) {
     const sensitive =
       req.path.startsWith('/auth/') ||
       (req.method === 'POST' && (req.path.includes('/attendance') || req.path.includes('/absence-requests')));
     if (!sensitive) return next();
     const sub = this.subOf(req);
-    if (this.hit(this.ipHits, `${req.ip}`, 600) || (sub && this.hit(this.userHits, sub, 60)))
-      throw new UnauthorizedException('Terlalu banyak request, coba lagi sebentar');
+    if (this.hit(this.ipHits, `${req.ip}`, 600) || (sub && this.hit(this.userHits, sub, 60))) {
+      (res as any)?.setHeader?.('Retry-After', '60');
+      throw new HttpException('Terlalu banyak request, coba lagi sebentar', HttpStatus.TOO_MANY_REQUESTS);
+    }
     next();
   }
 }

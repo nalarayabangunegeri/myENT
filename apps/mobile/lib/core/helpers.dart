@@ -3,9 +3,13 @@
 String wib(String? iso) {
   String p(int n) => n.toString().padLeft(2, '0');
   if (iso == null) return '–';
-  final d = DateTime.parse(iso).toUtc().add(const Duration(hours: 7));
-  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  return '${d.day} ${mo[d.month - 1]} ${p(d.hour)}:${p(d.minute)}';
+  try {
+    final d = DateTime.parse(iso).toUtc().add(const Duration(hours: 7));
+    const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    return '${d.day} ${mo[d.month - 1]} ${p(d.hour)}:${p(d.minute)}';
+  } catch (_) {
+    return '–';
+  }
 }
 String pct(dynamic v) => v == null ? '–' : '$v%';
 

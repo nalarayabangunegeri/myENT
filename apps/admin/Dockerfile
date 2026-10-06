@@ -20,4 +20,6 @@ ENV NODE_ENV=production PORT=3102 HOSTNAME=0.0.0.0
 COPY --from=build /app/apps/admin/.next/standalone ./
 COPY --from=build /app/apps/admin/.next/static ./apps/admin/.next/static
 EXPOSE 3102
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3102/login').then(()=>process.exit(0)).catch(()=>process.exit(1))"
+USER node
 CMD ["node", "apps/admin/server.js"]

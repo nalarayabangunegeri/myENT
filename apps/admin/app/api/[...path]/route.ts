@@ -1,8 +1,31 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { API, originOk, setSession } from '@/lib/auth';
+import { API, originOk } from '@/lib/auth';
 
 // Proxy umum ke API: token dari cookie httpOnly, refresh diam-diam saat 401.
+// ponytail: single-flight refresh in-memory (single instance). Ceiling: Redis saat multi-instance.
+let refreshing: Promise<boolean> | null = null;
+function doRefresh(refreshToken: string): Promise<boolean> {
+  if (!refreshing) {
+    refreshing = fetch(`${API}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
+      .then(async (rr) => {
+        if (!rr.ok) return false;
+        const t = await rr.json();
+        const { cookies } = await import('next/headers');
+        await (await import('@/lib/auth')).setSession(t.accessToken, t.refreshToken);
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing;
+}
 async function forward(req: NextRequest, path: string, retry = true): Promise<Response> {
   const c = await cookies();
   const access = c.get('access')?.value;
@@ -10,21 +33,14 @@ async function forward(req: NextRequest, path: string, retry = true): Promise<Re
   const headers: Record<string, string> = {};
   if (access) headers.authorization = `Bearer ${access}`;
   const ct = req.headers.get('content-type') ?? '';
-  if (ct && !ct.includes('multipart/form-data')) headers['content-type'] = ct;
+  if (ct) headers['content-type'] = ct; // teruskan boundary multipart apa adanya
+  const len = Number(req.headers.get('content-length') ?? 0);
+  if (len > 12 * 1024 * 1024) return NextResponse.json({ message: 'File terlalu besar' }, { status: 413 });
   const init: RequestInit = { method: req.method, headers };
   if (!['GET', 'HEAD'].includes(req.method)) init.body = Buffer.from(await req.arrayBuffer());
   let r = await fetch(url, init);
   if (r.status === 401 && retry && c.get('refresh')?.value) {
-    const rr = await fetch(`${API}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refreshToken: c.get('refresh')!.value }),
-    });
-    if (rr.ok) {
-      const t = await rr.json();
-      await setSession(t.accessToken, t.refreshToken);
-      return forward(req, path, false);
-    }
+    if (await doRefresh(c.get('refresh')!.value)) return forward(req, path, false);
   }
   return r;
 }
@@ -48,6 +64,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ path: str
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  if (!originOk(req)) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+  return GET(req, ctx);
+}
+
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   if (!originOk(req)) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   return GET(req, ctx);
 }

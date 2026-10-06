@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -28,6 +28,8 @@ export class AuditController {
   async list(@Query() q: AuditQuery) {
     const page = q.page ?? 1;
     const limit = Math.min(q.limit ?? 20, 100);
+    const badDate = (s?: string) => s !== undefined && isNaN(Date.parse(s));
+    if (badDate(q.from) || badDate(q.to)) throw new BadRequestException('Tanggal tidak valid');
     const where: any = {};
     if (q.actor) where.actorId = q.actor;
     if (q.action) where.action = q.action;
@@ -52,6 +54,7 @@ export class AuditController {
   @Get('export.xlsx')
   @Roles('ADMIN')
   async export(@Query() q: AuditQuery, @Res({ passthrough: true }) res: Response) {
+    if ((q.from && isNaN(Date.parse(q.from))) || (q.to && isNaN(Date.parse(q.to)))) throw new BadRequestException('Tanggal tidak valid');
     const where: any = {};
     if (q.actor) where.actorId = q.actor;
     if (q.action) where.action = q.action;

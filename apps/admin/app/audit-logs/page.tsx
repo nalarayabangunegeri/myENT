@@ -34,7 +34,15 @@ export default function AuditLogs() {
     <div>
       <div className="flex items-center gap-2 mb-4">
         <h1 className="text-xl font-bold">Audit Log</h1>
-        <button className="bg-green-700 text-white px-2 py-1 rounded text-sm" onClick={() => dl('/api/audit-logs/export.xlsx', 'audit-log.xlsx')}>Export XLSX</button>
+        <button className="bg-green-700 text-white px-2 py-1 rounded text-sm" onClick={() => {
+          const params = new URLSearchParams();
+          if (q.actor) params.set('actor', q.actor);
+          if (q.action) params.set('action', q.action);
+          if (q.from) params.set('from', q.from);
+          if (q.to) params.set('to', q.to);
+          const s = params.toString();
+          dl(`/api/audit-logs/export.xlsx${s ? `?${s}` : ''}`, 'audit-log.xlsx').catch((e) => setErr(e.message));
+        }}>Export XLSX</button>
       </div>
       <Err msg={err} />
       <div className="flex gap-2 mb-2 text-sm flex-wrap">

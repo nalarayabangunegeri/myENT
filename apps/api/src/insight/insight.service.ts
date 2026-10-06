@@ -127,6 +127,7 @@ export class InsightService {
       this.prisma.attendance.findMany({
         where,
         select: { status: true, submittedAt: true },
+        orderBy: { submittedAt: 'desc' },
         take: CAP,
       }),
     ]);

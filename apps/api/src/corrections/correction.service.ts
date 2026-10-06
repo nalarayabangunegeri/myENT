@@ -34,7 +34,7 @@ export class CorrectionService {
       if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
       if (!detectImage(file) && !isPdf(file)) throw new BadRequestException('Bukti harus foto/PDF');
       attachmentObjectKey = `corrections/${meetingId}/${userId}/${randomUUID()}`;
-      await this.storage.save(attachmentObjectKey, file, 'application/octet-stream');
+      await this.storage.save(attachmentObjectKey, file, isPdf(file) ? 'application/pdf' : 'image/jpeg');
     }
     try {
       return await this.prisma.correctionRequest.create({ data: { userId, meetingId, claim, attachmentObjectKey } });
@@ -83,17 +83,21 @@ export class CorrectionService {
     if (r.userId === actor.id) throw new ForbiddenException('Tidak boleh memutus klaim sendiri');
     const target = await this.prisma.user.findUnique({ where: { id: r.userId }, select: { id: true, division: true } });
     if (!target || !canManageMember(actor as any, target as any)) throw new ForbiddenException('Di luar divisi Anda');
-    const now = new Date();
-    const updated = await this.prisma.correctionRequest.update({
-      where: { id },
-      data: { status: approve ? 'APPROVED' : 'REJECTED', reviewerId: actor.id, reviewNote: reviewNote ?? '', reviewedAt: now },
-    });
+    // Adjust dulu: gagal adjust → klaim tetap PENDING (tak ada APPROVED tanpa hadir).
     if (approve)
       await this.attendance.adjust(actor, r.meetingId, r.userId, 'PRESENT', `Klaim anggota disetujui: ${reviewNote ?? ''}`);
-    await this.audit.log({
-      actorId: actor.id, action: approve ? 'correction.approve' : 'correction.reject',
-      entity: 'CorrectionRequest', entityId: id,
-      oldValue: { status: 'PENDING' } as any, newValue: { status: updated.status } as any,
+    const now = new Date();
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const u = await tx.correctionRequest.update({
+        where: { id },
+        data: { status: approve ? 'APPROVED' : 'REJECTED', reviewerId: actor.id, reviewNote: reviewNote ?? '', reviewedAt: now },
+      });
+      await this.audit.log({
+        actorId: actor.id, action: approve ? 'correction.approve' : 'correction.reject',
+        entity: 'CorrectionRequest', entityId: id,
+        oldValue: { status: 'PENDING' } as any, newValue: { status: u.status } as any,
+      }, tx);
+      return u;
     });
     return updated;
   }

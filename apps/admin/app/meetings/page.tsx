@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
 import { Empty, Err, Pager } from '@/lib/ui';
@@ -73,7 +74,7 @@ export default function Meetings() {
           <tbody>
             {rows.map((m) => (
               <tr key={m.id} className="border-b">
-                <td className="p-2"><a className="text-blue-600" href={`/meetings/${m.id}`}>{m.title}</a></td>
+                <td className="p-2"><Link className="text-blue-600" href={`/meetings/${m.id}`}>{m.title}</Link></td>
                 <td>{dt(m.startAt)}</td>
                 <td>{m.status}</td>
                 <td className="flex gap-1 flex-wrap p-1">

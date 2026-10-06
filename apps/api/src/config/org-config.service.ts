@@ -37,6 +37,11 @@ export class OrgConfigService {
 
   async set(key: string, value: any) {
     if (!(key in CONFIG_DEFAULTS)) throw new Error('Kunci konfigurasi tidak dikenal');
+    if (key === 'max_upload_mb' || key === 'max_material_mb') {
+      if (typeof value !== 'number' || !(value >= 1 && value <= 20)) throw new Error('max_*_mb harus angka 1–20');
+    }
+    if (key === 'max_active_loans_per_member' && (typeof value !== 'number' || !(value >= 1 && value <= 10)))
+      throw new Error('max_active_loans_per_member harus angka 1–10');
     await this.prisma.orgConfig.upsert({ where: { key }, create: { key, value }, update: { value } });
     this.cache.set(key, value);
     return { key, value };

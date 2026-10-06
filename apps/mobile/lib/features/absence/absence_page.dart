@@ -21,6 +21,7 @@ class _AbsencePageState extends State<AbsencePage> {
   List rows = [];
   List klaim = [];
   bool tabKlaim = false;
+  String? err;
   @override
   void initState() {
     super.initState();
@@ -30,12 +31,16 @@ class _AbsencePageState extends State<AbsencePage> {
   Future<void> _load() async {
     try {
       final r = await Api.get('/absence-requests/me?limit=50');
-      setState(() => rows = r['data']);
-    } catch (_) {}
+      if (mounted) setState(() => rows = r['data']);
+    } catch (e) {
+      if (mounted) setState(() => err = e.toString());
+    }
     try {
       final r = await Api.get('/corrections/me?limit=50');
-      setState(() => klaim = r['data']);
-    } catch (_) {}
+      if (mounted) setState(() => klaim = r['data']);
+    } catch (e) {
+      if (mounted) setState(() => err = e.toString());
+    }
   }
 
   Future<void> ajukan() async {
@@ -95,12 +100,12 @@ class _AbsencePageState extends State<AbsencePage> {
     if (ok != true || mid == null) return;
     try {
       await Api.postMultipart(
-        '/meetings/$mid/absence-requests',
+        "/meetings/$mid/absence-requests",
         {'reasonType': tipe, 'reasonDetail': detail.text},
         null,
         'attachment',
       );
-      _load();
+      if (mounted) _load();
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -160,8 +165,8 @@ class _AbsencePageState extends State<AbsencePage> {
     );
     if (ok != true || mid == null) return;
     try {
-      await Api.post('/meetings/$mid/corrections', {'claim': klaimC.text});
-      _load();
+      await Api.post("/meetings/$mid/corrections", {'claim': klaimC.text});
+      if (mounted) _load();
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -175,71 +180,67 @@ class _AbsencePageState extends State<AbsencePage> {
   Widget build(BuildContext context) {
     final data = tabKlaim ? klaim : rows;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Izin / Sakit'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(40),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextButton(
-                onPressed: () => setState(() => tabKlaim = false),
-                child: Text(
-                  'Izin',
-                  style: TextStyle(
-                    color: !tabKlaim ? Colors.white : Colors.white70,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () => setState(() => tabKlaim = true),
-                child: Text(
-                  'Klaim hadir',
-                  style: TextStyle(
-                    color: tabKlaim ? Colors.white : Colors.white70,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      appBar: AppBar(title: const Text('Izin / Sakit')),
       floatingActionButton: FloatingActionButton(
         onPressed: tabKlaim ? ajukanKlaim : ajukan,
         child: const Icon(Icons.add),
       ),
-      body: data.isEmpty
-          ? const Center(child: Text('Belum ada pengajuan'))
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView.builder(
-                itemCount: data.length,
-                itemBuilder: (_, i) {
-                  final r = data[i];
-                  return ListTile(
-                    title: Text(
-                      tabKlaim ? '${r['claim'] ?? ''}' : '${r['reasonType']}',
-                    ),
-                    subtitle: Text(
-                      '${statusLabel[r['status']] ?? r['status']}',
-                    ),
-                    trailing: r['status'] == 'PENDING'
-                        ? TextButton(
-                            onPressed: () async {
-                              await Api.patch(
-                                tabKlaim
-                                    ? '/corrections/${r['id']}/cancel'
-                                    : '/absence-requests/${r['id']}/cancel',
-                              );
-                              _load();
-                            },
-                            child: const Text('Tarik'),
-                          )
-                        : null,
-                  );
-                },
-              ),
-            ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Izin')),
+              ButtonSegment(value: true, label: Text('Klaim hadir')),
+            ],
+            selected: {tabKlaim},
+            onSelectionChanged: (s) => setState(() => tabKlaim = s.first),
+          ),
+        ),
+        if (err != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(err!, style: const TextStyle(color: Colors.red)),
+          ),
+        Expanded(
+          child: data.isEmpty
+              ? const Center(child: Text('Belum ada pengajuan'))
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    itemCount: data.length,
+                    itemBuilder: (_, i) {
+                      final r = data[i];
+                      return ListTile(
+                        title: Text(
+                          tabKlaim ? '${r['claim'] ?? ''}' : '${r['reasonType']}',
+                        ),
+                        subtitle: Text(
+                          '${statusLabel[r['status']] ?? r['status']}',
+                        ),
+                        trailing: r['status'] == 'PENDING'
+                            ? TextButton(
+                                onPressed: () async {
+                                  try {
+                                    await Api.patch(
+                                      tabKlaim
+                                          ? "/corrections/${r['id']}/cancel"
+                                          : "/absence-requests/${r['id']}/cancel",
+                                    );
+                                    if (mounted) _load();
+                                  } on ApiException catch (e) {
+                                    if (mounted) setState(() => err = e.message);
+                                  }
+                                },
+                                child: const Text('Tarik'),
+                              )
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ]),
     );
   }
 }

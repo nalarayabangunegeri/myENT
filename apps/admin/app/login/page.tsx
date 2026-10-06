@@ -17,6 +17,7 @@ export default function Login() {
   const [need2fa, setNeed2fa] = useState('');
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -26,40 +27,56 @@ export default function Login() {
     s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
     s.async = true;
     document.body.appendChild(s);
+    return () => {
+      document.getElementById('cf-script')?.remove();
+    };
   }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     setErr('');
-    const token = window.turnstile?.getResponse() ?? '';
-    const r = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ nim, password, 'cf-turnstile-response': token }),
-    });
-    window.turnstile?.reset();
-    const d = await r.json();
-    if (!r.ok) return setErr(d.message ?? 'Gagal login');
-    if (d.twoFactorRequired) return setNeed2fa(d.pendingToken);
-    if (d.mustChangePassword) return setMustChange(true);
-    gate(d.user?.role);
+    try {
+      const token = window.turnstile?.getResponse() ?? '';
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nim, password, 'cf-turnstile-response': token }),
+      });
+      const d = await r.json();
+      if (!r.ok) return setErr(d.message ?? 'Gagal login');
+      if (d.twoFactorRequired) return setNeed2fa(d.pendingToken);
+      if (d.mustChangePassword) return setMustChange(true);
+      gate(d.user?.role);
+    } finally {
+      window.turnstile?.reset();
+      setBusy(false);
+    }
   }
 
   async function verify(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     setErr('');
-    const r = await fetch('/api/auth/2fa/verify', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pendingToken: need2fa, code }),
-    });
-    const d = await r.json();
-    if (!r.ok) return setErr(d.message ?? 'Kode salah');
-    if (d.mustChangePassword) {
-      setNeed2fa('');
-      return setMustChange(true);
+    try {
+      const r = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pendingToken: need2fa, code }),
+      });
+      const d = await r.json();
+      if (!r.ok) return setErr(d.message ?? 'Kode salah');
+      if (d.mustChangePassword) {
+        setNeed2fa('');
+        return setMustChange(true);
+      }
+      gate(d.user?.role);
+    } finally {
+      window.turnstile?.reset();
+      setBusy(false);
     }
-    gate(d.user?.role);
   }
 
   async function gate(role: string) {
@@ -72,18 +89,25 @@ export default function Login() {
 
   async function change(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     setErr('');
-    const np = (document.getElementById('np') as HTMLInputElement).value;
-    const r = await fetch('/api/auth/change-password', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ oldPassword: password, newPassword: np }),
-    });
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      return setErr(d.message ?? 'Gagal');
+    try {
+      const np = (document.getElementById('np') as HTMLInputElement).value;
+      const r = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldPassword: password, newPassword: np }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        return setErr(d.message ?? 'Gagal');
+      }
+      router.push('/');
+    } finally {
+      window.turnstile?.reset();
+      setBusy(false);
     }
-    router.push('/');
   }
 
   return (
@@ -93,25 +117,25 @@ export default function Login() {
       {need2fa ? (
         <form onSubmit={verify} className="flex flex-col gap-2">
           <p className="text-sm">Masukkan kode 6 digit dari aplikasi authenticator.</p>
-          <input className="border p-2 rounded" placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} />
-          <button className="bg-blue-600 text-white p-2 rounded">Verifikasi</button>
+          <input className="border p-2 rounded" placeholder="123456" aria-label="Kode 2FA" value={code} onChange={(e) => setCode(e.target.value)} />
+          <button className="bg-blue-600 text-white p-2 rounded disabled:opacity-50" disabled={busy}>Verifikasi</button>
         </form>
       ) : !mustChange ? (
         <form onSubmit={submit} className="flex flex-col gap-2">
-          <input className="border p-2 rounded" placeholder="NIM" value={nim} onChange={(e) => setNim(e.target.value)} />
-          <input className="border p-2 rounded" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input className="border p-2 rounded" placeholder="NIM" aria-label="NIM" value={nim} onChange={(e) => setNim(e.target.value)} />
+          <input className="border p-2 rounded" type="password" placeholder="Password" aria-label="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           {SITE_KEY ? (
             <div className="cf-turnstile" data-sitekey={SITE_KEY} />
           ) : (
             <p className="text-xs text-yellow-700">Turnstile belum dikonfigurasi (dev saja).</p>
           )}
-          <button className="bg-blue-600 text-white p-2 rounded">Masuk</button>
+          <button className="bg-blue-600 text-white p-2 rounded disabled:opacity-50" disabled={busy}>Masuk</button>
         </form>
       ) : (
         <form onSubmit={change} className="flex flex-col gap-2">
           <p className="text-sm">Password sementara harus diganti (min 10 karakter).</p>
-          <input id="np" className="border p-2 rounded" type="password" placeholder="Password baru" minLength={10} />
-          <button className="bg-blue-600 text-white p-2 rounded">Ganti & Masuk</button>
+          <input id="np" className="border p-2 rounded" type="password" placeholder="Password baru" aria-label="Password baru" minLength={10} />
+          <button className="bg-blue-600 text-white p-2 rounded disabled:opacity-50" disabled={busy}>Ganti & Masuk</button>
         </form>
       )}
     </div>

@@ -16,7 +16,10 @@ export class JwtAuthGuard implements CanActivate {
     if (type !== 'Bearer' || !token) throw new UnauthorizedException('Unauthorized');
     try {
       const payload = await this.jwt.verifyAsync(token);
-      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, nim: true, name: true, role: true, status: true, division: true, cohortYear: true, mustChangePassword: true },
+      });
       if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException('Unauthorized');
       req.user = user;
       // PRD §6.1: paksa ganti password sementara, kecuali endpoint allowlist.

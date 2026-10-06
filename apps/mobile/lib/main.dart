@@ -11,6 +11,15 @@ import 'home_shell.dart';
 final navKey = GlobalKey<NavigatorState>();
 final _local = FlutterLocalNotificationsPlugin();
 
+Future<void> registerFcmToken() async {
+  try {
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null && await Session.access != null) {
+      await Api.post('/notifications/devices', {'token': token}).catchError((_) => null);
+    }
+  } catch (_) {}
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // FCM opsional: tanpa google-services tetap jalan (push mati, in-app tetap ada).
@@ -20,16 +29,20 @@ Future<void> main() async {
     final android = _local.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await android?.createNotificationChannel(const AndroidNotificationChannel('presensi', 'Presensi', importance: Importance.high));
     await android?.createNotificationChannel(const AndroidNotificationChannel('info', 'Info'));
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null && await Session.access != null) {
-      await Api.post('/notifications/devices', {'token': token});
-    }
+    await FirebaseMessaging.instance.requestPermission();
+    FirebaseMessaging.instance.onTokenRefresh.listen((t) async {
+      if (await Session.access != null) {
+        await Api.post('/notifications/devices', {'token': t}).catchError((_) => null);
+      }
+    });
+    await registerFcmToken();
     FirebaseMessaging.onMessage.listen((m) {
       final n = m.notification;
       if (n == null) return;
       final t = m.data['type'] ?? '';
+      final id = ((m.messageId ?? DateTime.now().toIso8601String()).hashCode) & 0x7fffffff;
       _local.show(
-        id: n.hashCode,
+        id: id,
         title: n.title,
         body: n.body,
         notificationDetails: NotificationDetails(
@@ -37,12 +50,16 @@ Future<void> main() async {
             (t.startsWith('attendance') || t.startsWith('meeting')) ? 'presensi' : 'info',
             t.startsWith('attendance') || t.startsWith('meeting') ? 'Presensi' : 'Info',
           ),
+          iOS: const DarwinNotificationDetails(),
         ),
         payload: '${m.data['refType'] ?? ''}|${m.data['refId'] ?? ''}',
       );
     });
     _local.initialize(
-      settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(),
+      ),
       onDidReceiveNotificationResponse: (r) => _openDeepLink(r.payload),
     );
     FirebaseMessaging.onMessageOpenedApp.listen((m) => _openDeepLink('${m.data['refType'] ?? ''}|${m.data['refId'] ?? ''}'));
@@ -55,9 +72,9 @@ Future<void> main() async {
 
 void _openDeepLink(String? payload) {
   final ref = (payload ?? '').split('|').firstOrNull;
-  navKey.currentState?.pushAndRemoveUntil(
-    MaterialPageRoute(builder: (_) => HomeShell(initialTab: tabFor(ref?.isEmpty == true ? null : ref))),
-    (_) => false,
+  final tab = tabFor(ref?.isEmpty == true ? null : ref);
+  navKey.currentState?.push(
+    MaterialPageRoute(builder: (_) => HomeShell(initialTab: tab)),
   );
 }
 

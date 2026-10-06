@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/session.dart';
+import '../../main.dart' show registerFcmToken;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,7 +19,17 @@ class _LoginPageState extends State<LoginPage> {
   String? err;
   bool busy = false;
 
+  @override
+  void dispose() {
+    nim.dispose();
+    pass.dispose();
+    kode.dispose();
+    baru.dispose();
+    super.dispose();
+  }
+
   Future<void> login() async {
+    if (busy) return;
     setState(() {
       busy = true;
       err = null;
@@ -30,6 +41,7 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
       await Session.save(r['accessToken'], r['refreshToken']);
+      await registerFcmToken();
       if (r['mustChangePassword'] == true) {
         setState(() => mustChange = true);
       } else {
@@ -38,16 +50,27 @@ class _LoginPageState extends State<LoginPage> {
     } on ApiException catch (e) {
       setState(() => err = e.message);
     } finally {
-      setState(() => busy = false);
+      if (mounted) setState(() => busy = false);
     }
   }
 
   Future<void> ganti() async {
+    if (busy) return;
+    if (baru.text.length < 10) {
+      setState(() => err = 'Password baru minimal 10 karakter');
+      return;
+    }
+    setState(() {
+      busy = true;
+      err = null;
+    });
     try {
       await Api.post('/auth/change-password', {'oldPassword': pass.text, 'newPassword': baru.text});
       _masuk();
     } on ApiException catch (e) {
       setState(() => err = e.message);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -56,9 +79,15 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> verifikasi() async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      err = null;
+    });
     try {
       final r = await Api.post('/auth/2fa/verify', {'pendingToken': pending, 'code': kode.text.trim()}) as Map;
       await Session.save(r['accessToken'], r['refreshToken']);
+      await registerFcmToken();
       if (r['mustChangePassword'] == true) {
         setState(() {
           pending = null;
@@ -69,15 +98,28 @@ class _LoginPageState extends State<LoginPage> {
       }
     } on ApiException catch (e) {
       setState(() => err = e.message);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
   Future<void> lupa() async {
+    if (busy) return;
+    if (nim.text.trim().isEmpty) {
+      setState(() => err = 'Isi NIM dulu');
+      return;
+    }
+    setState(() {
+      busy = true;
+      err = null;
+    });
     try {
       await Api.post('/auth/forgot-password', {'nim': nim.text.trim()});
       setState(() => err = 'Bila NIM terdaftar + ada email, tautan reset terkirim.');
     } on ApiException catch (e) {
       setState(() => err = e.message);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -95,14 +137,14 @@ class _LoginPageState extends State<LoginPage> {
           if (pending != null) ...[
             const Text('Kode 2FA dari aplikasi authenticator:'),
             TextField(controller: kode, decoration: const InputDecoration(labelText: '123456'), keyboardType: TextInputType.number),
-            ElevatedButton(onPressed: verifikasi, child: const Text('Verifikasi')),
+            ElevatedButton(onPressed: busy ? null : verifikasi, child: const Text('Verifikasi')),
           ] else if (!mustChange) ...[
             ElevatedButton(onPressed: busy ? null : login, child: const Text('Masuk')),
-            TextButton(onPressed: lupa, child: const Text('Lupa password')),
+            TextButton(onPressed: busy ? null : lupa, child: const Text('Lupa password')),
           ] else ...[
             const Text('Password sementara harus diganti (min 10 karakter).'),
             TextField(controller: baru, decoration: const InputDecoration(labelText: 'Password baru'), obscureText: true),
-            ElevatedButton(onPressed: ganti, child: const Text('Ganti & Masuk')),
+            ElevatedButton(onPressed: busy ? null : ganti, child: const Text('Ganti & Masuk')),
           ],
         ]),
       ),

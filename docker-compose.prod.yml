@@ -1,6 +1,16 @@
+# ponytail: single-instance default (throttle + tick in-memory). Jangan scale api >1
+# tanpa Redis/advisory eksternal — lihat docs/DECISIONS.md. Ceiling: 150 user serentak OK.
+x-logging: &log
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-files: "3"
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *log
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-jurnalistik}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD}
@@ -17,6 +27,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    logging: *log
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-jurnalistik}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-jurnalistik}?schema=public
       JWT_SECRET: ${JWT_SECRET:?isi JWT_SECRET min 32 karakter}
@@ -35,21 +47,38 @@ services:
       - uploads:/srv/uploads
     expose:
       - "3000"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   admin:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
+    restart: unless-stopped
+    logging: *log
     environment:
       API_URL: http://api:3000
       ALLOWED_ORIGINS: ${ADMIN_URL:?isi ADMIN_URL, mis. https://admin.contoh.id}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     expose:
       - "3102"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3102/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   caddy:
     image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *log
     ports:
       - "80:80"
       - "443:443"
@@ -58,8 +87,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
-      - admin
+      api:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
 
 volumes:
   pgdata:

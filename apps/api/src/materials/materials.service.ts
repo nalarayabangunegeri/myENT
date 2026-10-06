@@ -54,8 +54,8 @@ export class MaterialsService {
     const m = await this.prisma.material.findUnique({ where: { id } });
     if (!m) throw new NotFoundException('Tidak ditemukan');
     if (!isAdmin && m.uploaderId !== actorId) throw new ForbiddenException('Hanya pengunggah atau ADMIN');
-    await this.storage.remove(m.objectKey);
     await this.prisma.material.delete({ where: { id } });
+    await this.storage.remove(m.objectKey).catch(() => {});
     await this.audit.log({ actorId, action: 'material.delete', entity: 'Material', entityId: id, oldValue: { title: m.title } as any });
     return { ok: true };
   }

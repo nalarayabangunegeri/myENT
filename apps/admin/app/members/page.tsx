@@ -49,10 +49,14 @@ export default function Members() {
   async function csv(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
+    e.target.value = '';
+    if (f.size > 200 * 1024) return setErr('CSV maksimal 200 KB');
     try {
       const text = await f.text();
       const r = await api<{ results: any[] }>('users/import', { method: 'POST', body: JSON.stringify({ csv: text }) });
-      alert(r.results.map((x: any) => `${x.nim}: ${x.status}${x.temporaryPassword ? ` (${x.temporaryPassword})` : ''}`).join('\n'));
+      const ok = r.results.filter((x: any) => x.status === 'ok').length;
+      setErr(`Import: ${ok}/${r.results.length} ok${ok < r.results.length ? ' — lihat konsol' : ''}`);
+      console.log(r.results.filter((x: any) => x.status !== 'ok'));
       load(1);
     } catch (er: any) {
       setErr(er.message);

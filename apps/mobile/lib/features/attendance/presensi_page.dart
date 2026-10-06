@@ -20,51 +20,73 @@ class PresensiPage extends StatefulWidget {
 class _PresensiPageState extends State<PresensiPage> {
   File? foto;
   String? status;
+  String? lastError;
   int percobaan = 0;
   bool kirim = false;
 
   Future<void> jepret() async {
-    final x = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1280);
-    if (x == null) return;
-    final out = '${x.path}.jpg';
-    final r = await FlutterImageCompress.compressAndGetFile(x.path, out, quality: 80);
-    setState(() {
-      foto = r == null ? File(x.path) : File(r.path);
-      status = null;
-      percobaan = 0;
-    });
+    try {
+      final x = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1280);
+      if (x == null) return;
+      final out = '${x.path}.jpg';
+      final r = await FlutterImageCompress.compressAndGetFile(x.path, out, quality: 80);
+      final f = r == null ? File(x.path) : File(r.path);
+      if (await f.length() > 5 * 1024 * 1024) {
+        if (mounted) setState(() => status = 'Foto terlalu besar, ulangi');
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          foto = f;
+          status = null;
+          lastError = null;
+          percobaan = 0;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => status = 'Kamera gagal: $e');
+    }
   }
 
   Future<Position?> _lokasi() async {
     if (widget.meeting['latitude'] == null) return null;
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
-    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-      throw ApiException(400, 'Izin lokasi dibutuhkan kegiatan ini');
+    if (p == LocationPermission.denied) {
+      throw ApiException(400, 'Izin lokasi ditolak — aktifkan di pengaturan');
     }
-    return Geolocator.getCurrentPosition();
+    if (p == LocationPermission.deniedForever) {
+      throw ApiException(400, 'Izin lokasi permanen ditolak — buka pengaturan aplikasi');
+    }
+    final off = await Geolocator.isLocationServiceEnabled();
+    if (!off) throw ApiException(400, 'GPS mati — nyalakan lokasi dulu');
+    return Geolocator.getCurrentPosition().timeout(const Duration(seconds: 10));
   }
 
   Future<int> _kirimSekali() async {
     try {
-      final pos = await _lokasi();      final fields = {
+      final pos = await _lokasi();
+      final fields = {
         if (pos != null) 'latitude': '${pos.latitude}',
         if (pos != null) 'longitude': '${pos.longitude}',
         if (widget.qrToken != null) 'token': widget.qrToken!,
       };
       await Api.postMultipart(
         widget.qrToken == null
-            ? '/meetings/${widget.meeting['id']}/attendance'
-            : '/meetings/${widget.meeting['id']}/attendance/qr',
+            ? "/meetings/${widget.meeting['id']}/attendance"
+            : "/meetings/${widget.meeting['id']}/attendance/qr",
         fields,
         foto,
         'selfie',
       );
       return 200;
     } on ApiException catch (e) {
+      lastError = e.message;
       return e.status;
-    } on TimeoutException {
-      return 0; // timeout/terputus → cek dulu sebelum ulang
+    } catch (e) {
+      // Timeout/socket/GPS/dll → jalur retry yang cek status dulu.
+      lastError = e.toString().replaceFirst('Exception: ', '');
+      return 0;
     }
   }
 
@@ -79,9 +101,11 @@ class _PresensiPageState extends State<PresensiPage> {
     try {
       await _submitLoop();
     } on MustChange {
-      setState(() => status = 'Perlu ganti password, masuk ulang');
+      if (mounted) setState(() => status = 'Perlu ganti password, masuk ulang');
+    } catch (e) {
+      if (mounted) setState(() => status = 'Gagal: $e');
     } finally {
-      setState(() => kirim = false);
+      if (mounted) setState(() => kirim = false);
     }
   }
 
@@ -89,27 +113,54 @@ class _PresensiPageState extends State<PresensiPage> {
     final mid = widget.meeting['id'];
     while (true) {
       final s = await _kirimSekali();
+      if (s == 409) {
+        // 409 = duplikat milik sendiri (BR-01) → verifikasi dulu biar tak false-positive.
+        try {
+          await Api.get("/meetings/$mid/attendance/me");
+          if (mounted) setState(() => status = 'Berhasil tercatat');
+          await _bersihFoto();
+          break;
+        } catch (_) {
+          if (mounted) setState(() => status = 'Gagal: ${lastError ?? 'duplikat'}');
+          break;
+        }
+      }
       if (presensiSukses(s)) {
-        setState(() => status = 'Berhasil tercatat');
+        if (mounted) setState(() => status = 'Berhasil tercatat');
+        await _bersihFoto();
         break;
       }
       if (presensiBerhenti(s) || s == 401) {
-        setState(() => status = s == 401 ? 'Sesi habis, masuk ulang' : 'Gagal — hubungi pengurus bila window tutup');
+        if (mounted) {
+          setState(() => status = s == 401
+              ? 'Sesi habis, masuk ulang'
+              : 'Gagal: ${lastError ?? 'hubungi pengurus bila window tutup'}');
+        }
         break;
       }
       // Timeout: cek status dulu (request mungkin sempat masuk).
       try {
-        await Api.get('/meetings/$mid/attendance/me');
-        setState(() => status = 'Berhasil tercatat');
+        await Api.get("/meetings/$mid/attendance/me");
+        if (mounted) setState(() => status = 'Berhasil tercatat');
+        await _bersihFoto();
         break;
       } catch (_) {}
       percobaan++;
       if (!bolehRetry(percobaan)) {
-        setState(() => status = 'Gagal terkirim, coba lagi');
+        if (mounted) setState(() => status = 'Gagal terkirim, coba lagi');
         break;
       }
-      setState(() => status = 'Mengulang… ($percobaan)');
+      if (mounted) setState(() => status = 'Mengulang… ($percobaan/3)');
+      await Future.delayed(Duration(seconds: percobaan)); // backoff 1s,2s
     }
+  }
+
+  Future<void> _bersihFoto() async {
+    try {
+      final f = foto;
+      foto = null;
+      if (f != null && await f.exists()) await f.delete();
+    } catch (_) {}
   }
 
   @override

@@ -50,8 +50,8 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('2fa/setup')
-  setup2fa(@Req() req: any) {
-    return this.auth.setup2fa(req.user.id);
+  setup2fa(@Req() req: any, @Body() dto: Disable2faDto) {
+    return this.auth.setup2fa(req.user.id, dto.password);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -75,7 +75,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Req() req: any) {
-    const { passwordHash, ...safe } = req.user;
+    const { passwordHash, totpSecret, failedLogins, lockedUntil, ...safe } = req.user;
     return safe;
   }
 

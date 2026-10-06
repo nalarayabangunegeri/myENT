@@ -73,14 +73,14 @@ export class LoanController {
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get('loans/me')
-  mine(@Req() req: any) {
-    return this.loans.myList(req.user.id);
+  mine(@Req() req: any, @Query() q: PageQuery) {
+    return this.loans.myList(req.user.id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('loans')
-  all(@Query('status') status?: string) {
-    return this.loans.list(status);
+  all(@Query() q: PageQuery & { status?: string }) {
+    return this.loans.list(q.status, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('OFFICER', 'ADMIN')

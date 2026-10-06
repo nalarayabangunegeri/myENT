@@ -13,9 +13,12 @@ export default function Inventory() {
   const [hist, setHist] = useState<any[]>([]);
   const load = () => {
     api<any[]>('items').then(setItems).catch((e) => setErr(e.message));
-    api<any[]>(`loans${filter ? `?status=${filter}` : ''}`).then(setLoans).catch((e) => setErr(e.message));
+    api<any>(`loans${filter ? `?status=${filter}` : ''}`).then((r) => setLoans(Array.isArray(r) ? r : r.data ?? [])).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, [filter]);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -28,11 +31,12 @@ export default function Inventory() {
     }
   }
 
-  async function doReturn(e: React.FormEvent) {
+  async function doReturn(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!ret) return;
-    const f = (document.getElementById('retphoto') as HTMLInputElement).files?.[0];
-    if (!f) return setErr('Foto akhir wajib');
+    const f = new FormData(e.currentTarget).get('photo') as File | null;
+    if (!f?.size) return setErr('Foto akhir wajib');
+    if (f.size > 5 * 1024 * 1024) return setErr('Foto maksimal 5 MB');
     const fd = new FormData();
     fd.append('photo', f);
     fd.append('noteIn', ret.note);
@@ -78,15 +82,14 @@ export default function Inventory() {
       )}
       <div className="flex gap-2 mb-2 text-sm">
         <h2 className="font-bold">Pinjaman</h2>
-        <select className="border p-1 rounded" value={filter} onChange={(e) => { setFilter(e.target.value); }}>
+        <select className="border p-1 rounded" aria-label="Filter status pinjaman" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">Semua</option><option>ACTIVE</option><option>OVERDUE</option><option>RETURNED</option>
         </select>
-        <button className="bg-gray-200 px-2 rounded" onClick={load}>Muat</button>
       </div>
       {ret && (
         <form onSubmit={doReturn} className="bg-white p-4 rounded shadow my-2 grid md:grid-cols-4 gap-2 text-sm">
           <span className="text-sm">{ret.damaged ? 'Tandai RUSAK' : 'Terima kembali'}</span>
-          <input id="retphoto" type="file" accept="image/*" className="border p-2 rounded" />
+          <input name="photo" type="file" accept="image/*" className="border p-2 rounded" />
           <input className="border p-2 rounded" placeholder="Catatan kondisi" value={ret.note} onChange={(e) => setRet({ ...ret, note: e.target.value })} />
           <div className="flex gap-1">
             <button className="bg-blue-600 text-white px-2 rounded">Kirim</button>

@@ -1,6 +1,7 @@
 'use client';
 import { use, useEffect, useState } from 'react';
 import { api } from '@/lib/client';
+import { Empty, Err } from '@/lib/ui';
 
 export default function MeetingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -8,63 +9,89 @@ export default function MeetingDetail({ params }: { params: Promise<{ id: string
   const [reqs, setReqs] = useState<any[]>([]);
   const [kors, setKors] = useState<any[]>([]);
   const [qr, setQr] = useState('');
+  const [err, setErr] = useState('');
   const [loc, setLoc] = useState({ latitude: '', longitude: '', radiusM: '' });
   const [sel, setSel] = useState<string[]>([]);
   const [adj, setAdj] = useState({ userId: '', status: 'PERMITTED', reason: '' });
   const load = () => {
-    api<{ data: any[] }>(`meetings/${id}/attendance?limit=100`).then((r) => setAtt(r.data)).catch(() => {});
-    api<{ data: any[] }>(`meetings/${id}/absence-requests?limit=100`).then((r) => setReqs(r.data)).catch(() => {});
-    api<{ data: any[] }>(`meetings/${id}/corrections?limit=100`).then((r) => setKors(r.data)).catch(() => {});
+    setErr('');
+    // ponytail: limit 100 tanpa pagination (skala UKM). Ceiling: pager saat >100/rapat.
+    api<{ data: any[] }>(`meetings/${id}/attendance?limit=100`).then((r) => setAtt(r.data)).catch((e) => setErr(e.message));
+    api<{ data: any[] }>(`meetings/${id}/absence-requests?limit=100`).then((r) => setReqs(r.data)).catch((e) => setErr(e.message));
+    api<{ data: any[] }>(`meetings/${id}/corrections?limit=100`).then((r) => setKors(r.data)).catch((e) => setErr(e.message));
     api<{ qr: string }>(`meetings/${id}/qr`).then((r) => setQr(r.qr)).catch(() => {});
   };
   useEffect(load, [id]);
 
   async function decide(rid: string, a: 'approve' | 'reject') {
     const note = prompt('Catatan (opsional)', '') ?? '';
-    await api(`absence-requests/${rid}/${a}`, { method: 'PATCH', body: JSON.stringify({ reviewNote: note }) });
-    load();
+    try {
+      await api(`absence-requests/${rid}/${a}`, { method: 'PATCH', body: JSON.stringify({ reviewNote: note }) });
+      load();
+    } catch (e: any) {
+      setErr(e.message);
+    }
   }
 
   async function bulk() {
     if (!sel.length || !confirm(`Proses ${sel.length} request?`)) return;
-    const r = await api<{ results: any[] }>('absence-requests/bulk', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'approve', ids: sel }),
-    });
-    alert(r.results.map((x: any) => `${x.id.slice(0, 8)}: ${x.status}`).join('\n'));
-    setSel([]);
-    load();
+    try {
+      const r = await api<{ results: any[] }>('absence-requests/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'approve', ids: sel }),
+      });
+      const fail = r.results.filter((x: any) => x.status !== 'ok');
+      if (fail.length) setErr(`${fail.length} gagal — lihat konsol`);
+      console.log(r.results);
+      setSel([]);
+      load();
+    } catch (e: any) {
+      setErr(e.message);
+    }
   }
 
   async function adjust(e: React.FormEvent) {
     e.preventDefault();
-    await api(`meetings/${id}/attendance/adjust`, { method: 'POST', body: JSON.stringify(adj) });
-    setAdj({ userId: '', status: 'PERMITTED', reason: '' });
-    load();
+    try {
+      await api(`meetings/${id}/attendance/adjust`, { method: 'POST', body: JSON.stringify(adj) });
+      setAdj({ userId: '', status: 'PERMITTED', reason: '' });
+      load();
+    } catch (e: any) {
+      setErr((e as Error).message);
+    }
   }
 
   async function decideKor(kid: string, a: 'approve' | 'reject') {
     const note = prompt('Catatan (opsional)', '') ?? '';
-    await api(`corrections/${kid}/${a}`, { method: 'PATCH', body: JSON.stringify({ reviewNote: note }) });
-    load();
+    try {
+      await api(`corrections/${kid}/${a}`, { method: 'PATCH', body: JSON.stringify({ reviewNote: note }) });
+      load();
+    } catch (e: any) {
+      setErr(e.message);
+    }
   }
 
   async function saveLoc(e: React.FormEvent) {
     e.preventDefault();
-    await api(`meetings/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        latitude: loc.latitude === '' ? null : Number(loc.latitude),
-        longitude: loc.longitude === '' ? null : Number(loc.longitude),
-        radiusM: loc.radiusM === '' ? null : Number(loc.radiusM),
-      }),
-    });
-    alert('Lokasi tersimpan');
+    try {
+      await api(`meetings/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          latitude: loc.latitude === '' ? null : Number(loc.latitude),
+          longitude: loc.longitude === '' ? null : Number(loc.longitude),
+          radiusM: loc.radiusM === '' ? null : Number(loc.radiusM),
+        }),
+      });
+      setErr('');
+    } catch (e: any) {
+      setErr(e.message);
+    }
   }
 
   return (
     <div>
       <h1 className="text-xl font-bold mb-4">Kegiatan</h1>
+      <Err msg={err} />
       <div className="flex gap-4 items-start mb-4">
         {qr && <img src={qr} alt="QR presensi" className="w-32 h-32 bg-white p-1 rounded shadow" />}
         <form onSubmit={saveLoc} className="bg-white p-4 rounded shadow grid md:grid-cols-4 gap-2 text-sm">

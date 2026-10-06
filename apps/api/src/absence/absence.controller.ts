@@ -72,7 +72,7 @@ export class AbsenceController {
   @Roles('OFFICER', 'ADMIN')
   @Patch('absence-requests/:id/reject')
   reject(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() body: DecideDto) {
-    return this.absence.decide(req.user.id, id, false, body.reviewNote ?? '');
+    return this.absence.decide(req.user, id, false, body.reviewNote ?? '');
   }
 
   // Bulk per item: transaksi + audit sendiri; satu gagal tak menggagalkan lain (PRD §15.7).

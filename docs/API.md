@@ -17,7 +17,7 @@ Header: `Authorization: Bearer <accessToken>` (umur 15 mnt).Semua respons error:
 | `POST /auth/change-password` | login | `{ oldPassword, newPassword(min 10) }` | Mencabut semua sesi |
 | `POST /auth/forgot-password` | — | `{ nim }` | Selalu 200 (anti-enumerasi); butuh email di profil + SMTP |
 | `POST /auth/reset-via-email` | — | `{ token, newPassword }` | Sekali pakai, 1 jam |
-| `POST /auth/2fa/setup` | login | — | → `{ secret, otpauthUrl }` (opt-in authenticator) |
+| `POST /auth/2fa/setup` | login | `{ password }` | → `{ secret, otpauthUrl }` (opt-in authenticator; verifikasi password anti-takeover sesi)
 | `POST /auth/2fa/enable` | login | `{ code }` | Aktif setelah kode benar |
 | `POST /auth/2fa/disable` | login | `{ password }` | Matikan + hapus secret |
 | `POST /auth/2fa/verify` | — | `{ pendingToken, code }` | Langkah kedua login (token 5 mnt) |
@@ -112,7 +112,8 @@ GET  /duty/summary/me      # { scheduled, attended } — rekap % rapat mengecual
 POST /items  PATCH /items/:id  GET /items  # pengurus; status AVAILABLE/BORROWED/MAINTENANCE
 POST /loans { itemId, dueAt } + foto `photo` (awal, wajib)
 POST /loans/:id/return + foto `photo` (akhir, wajib; pengurus; `damaged` → MAINTENANCE)
-POST /loans/:id/cancel  GET /loans/me  GET /loans (pengurus)
+POST /loans/:id/cancel  GET /loans/me?page&limit  GET /loans?status&page&limit (pengurus)
+→ `{ page, limit, total, data }` (dulu array mentah)
 ```
 
 Aturan: satu aktif per barang (409), maks pinjaman aktif per anggota (config, default 2),

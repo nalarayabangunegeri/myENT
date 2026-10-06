@@ -43,6 +43,8 @@ export class NotificationsService {
   }
 
   async registerDevice(userId: string, token: string) {
+    // Token unik global: cabut dari pemilik lama agar tak bisa diklaim orang lain.
+    await this.prisma.device.deleteMany({ where: { token, userId: { not: userId } } });
     await this.prisma.device.upsert({
       where: { token }, create: { userId, token }, update: { userId },
     });

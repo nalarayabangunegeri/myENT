@@ -1,7 +1,19 @@
 {$API_URL} {
 	reverse_proxy api:3000
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+	}
+	log
 }
 
 {$ADMIN_URL} {
 	reverse_proxy admin:3102
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy no-referrer
+	}
+	log
 }

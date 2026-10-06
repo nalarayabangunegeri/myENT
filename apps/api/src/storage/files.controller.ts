@@ -10,7 +10,7 @@ export class FilesController {
   @Get('*key')
   async get(@Param('key') key: string | string[], @Query('exp') exp: string, @Query('sig') sig: string, @Res() res: Response) {
     const k = Array.isArray(key) ? key.join('/') : key;
-    if (!exp || !sig || !StorageService.verifyLocalToken(k, exp, sig)) throw new UnauthorizedException();
+    if (!exp || !sig || k.includes('..') || !StorageService.verifyLocalToken(k, exp, sig)) throw new UnauthorizedException();
     try {
       const buf = await this.storage.readLocal(k);
       res.setHeader('Content-Type', 'image/jpeg');

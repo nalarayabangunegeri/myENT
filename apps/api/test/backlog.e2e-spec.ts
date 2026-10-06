@@ -84,7 +84,7 @@ describe('backlog modules (e2e)', () => {
     await srv.post('/loans').set('Authorization', `Bearer ${memTulis}`).field('itemId', ids[0]).field('dueAt', due).attach('photo', buf, 'p.jpg').expect(409);
     await srv.post('/loans').set('Authorization', `Bearer ${memFoto}`).field('itemId', ids[2]).field('dueAt', due).attach('photo', buf, 'p.jpg').expect(400);
     const mine = await srv.get('/loans/me').set('Authorization', `Bearer ${memFoto}`).expect(200);
-    const back = await srv.post(`/loans/${mine.body[0].id}/return`).set('Authorization', `Bearer ${offFoto}`).field('noteIn', 'ok').field('damaged', 'false').attach('photo', buf, 'p.jpg').expect(201);
+    const back = await srv.post(`/loans/${mine.body.data[0].id}/return`).set('Authorization', `Bearer ${offFoto}`).field('noteIn', 'ok').field('damaged', 'false').attach('photo', buf, 'p.jpg').expect(201);
     expect(back.body.status).toBe('RETURNED');
   });
 

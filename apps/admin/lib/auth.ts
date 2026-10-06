@@ -17,7 +17,17 @@ export async function clearSession() {
 
 export function originOk(req: Request) {
   const o = req.headers.get('origin');
-  if (!o) return true;
   const allow = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  // Tanpa allowlist: terima tanpa-Origin (curl/SSR) atau satu-host (same-origin BFF).
+  if (!allow.length) {
+    if (!o) return true;
+    try {
+      const host = (req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '').split(',')[0].trim();
+      return new URL(o).host === host;
+    } catch {
+      return false;
+    }
+  }
+  if (!o) return true; // non-browser tanpa Origin; guard JWT tetap jalan
   return allow.includes(o);
 }

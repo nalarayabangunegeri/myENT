@@ -68,6 +68,7 @@ export class AssignmentsService {
       create: { assignmentId, userId, objectKey: key, submittedAt: now },
       update: { objectKey: key, submittedAt: now, reviewedAt: null, reviewNote: '' },
     });
+    if (prev && prev.objectKey !== key) await this.storage.remove(prev.objectKey).catch(() => {});
     // Kumpul ulang setelah review = review hangus; catat agar tak hilang diam-diam.
     if (prev?.reviewedAt)
       await this.audit.log({

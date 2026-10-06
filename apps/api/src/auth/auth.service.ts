@@ -49,16 +49,18 @@ export class AuthService {
       throw new UnauthorizedException('Akun terkunci sementara, coba lagi nanti');
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
-      const failed = user.failedLogins + 1;
-      await this.prisma.user.update({
+      // ponytail: increment atomik (anti-balapan hitungan). Ceiling: Redis saat multi-instance.
+      const updated = await this.prisma.user.update({
         where: { id: user.id },
         data: {
-          failedLogins: failed,
-          ...(failed >= maxAttempts
-            ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_1000) }
+          failedLogins: { increment: 1 },
+          ...(user.failedLogins + 1 >= maxAttempts
+            ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_000) }
             : {}),
         },
+        select: { failedLogins: true },
       });
+      void updated;
       await this.audit.log(
         { actorId: user.id, action: 'auth.login-failed', entity: 'User', entityId: user.id },
       ).catch(() => {});
@@ -75,16 +77,19 @@ export class AuthService {
   }
 
   async refresh(raw: string) {
+    const hash = sha256(raw);
     const sess = await this.prisma.session.findUnique({
-      where: { refreshTokenHash: sha256(raw) },
-      include: { user: true },
+      where: { refreshTokenHash: hash },
+      include: { user: { select: { id: true, status: true } } },
     });
     if (!sess || sess.revokedAt || sess.expiresAt < new Date() || sess.user.status !== 'ACTIVE')
       throw new UnauthorizedException('Unauthorized');
-    await this.prisma.session.update({
-      where: { id: sess.id },
+    // Atomic revoke: konkuren kedua dapat count 0 → ditolak (anti-reuse).
+    const revoked = await this.prisma.session.updateMany({
+      where: { id: sess.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (!revoked.count) throw new UnauthorizedException('Unauthorized');
     return this.issueTokens(sess.userId);
   }
 
@@ -145,7 +150,7 @@ export class AuthService {
     if (user && user.status === 'ACTIVE' && user.email) {
       const raw = randomBytes(32).toString('hex');
       await this.prisma.passwordReset.create({
-        data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 3600_1000) },
+        data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 3600_000) },
       });
       await this.sendMail(
         user.email,
@@ -173,10 +178,11 @@ export class AuthService {
   }
 
   // 2FA TOTP opt-in (authenticator app). Secret disimpan, aktif setelah kode benar.
-  async setup2fa(userId: string) {
+  async setup2fa(userId: string, password: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!(await bcrypt.compare(password, user.passwordHash))) throw new UnauthorizedException('Password salah');
     const secret = generateSecret();
-    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: secret } });
+    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: secret, totpEnabled: false } });
     return { secret, otpauthUrl: keyuri(user.nim, secret) };
   }
 
@@ -210,10 +216,9 @@ export class AuthService {
       throw new UnauthorizedException('Unauthorized');
     if (user.lockedUntil && user.lockedUntil > new Date()) throw new UnauthorizedException('Akun terkunci sementara');
     if (!verifyTotp(user.totpSecret, code)) {
-      const failed = user.failedLogins + 1;
       await this.prisma.user.update({
         where: { id: user.id },
-        data: { failedLogins: failed, ...(failed >= Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5) ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_1000) } : {}) },
+        data: { failedLogins: { increment: 1 }, ...(user.failedLogins + 1 >= Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5) ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_000) } : {}) },
       });
       throw new UnauthorizedException('Kode salah');
     }

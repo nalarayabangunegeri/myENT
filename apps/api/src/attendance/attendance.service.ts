@@ -32,17 +32,21 @@ export class AttendanceService {
     if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
     if (!detectImage(file)) throw new BadRequestException('File harus foto JPG/PNG/WebP');
     // Re-encode → EXIF (termasuk lokasi) terbuang (PRD §10). Output selalu JPEG.
-    const clean = await sharp(file).rotate().jpeg({ quality: 80 }).toBuffer();
+    // ponytail: resize 1920 + pixel cap anti-bom dekompresi. Ceiling: queue/worker saat traffic tinggi.
+    const clean = await sharp(file, { limitInputPixels: 25_000_000 }).rotate().resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
     const key = selfieKey(now, randomUUID());
     await this.storage.save(key, clean, 'image/jpeg');
     try {
-      const a = await this.prisma.attendance.create({
-        data: { userId, meetingId, status: 'PRESENT', source: 'SELF', selfieObjectKey: key, submittedAt: now },
-      });
-      // BR-15 PRESENT menang: request PENDING miliknya otomatis CANCELLED.
-      await this.prisma.absenceRequest.updateMany({
-        where: { userId, meetingId, status: 'PENDING' },
-        data: { status: 'CANCELLED' },
+      const a = await this.prisma.$transaction(async (tx: any) => {
+        const row = await tx.attendance.create({
+          data: { userId, meetingId, status: 'PRESENT', source: 'SELF', selfieObjectKey: key, submittedAt: now },
+        });
+        // BR-15 PRESENT menang: request PENDING miliknya otomatis CANCELLED.
+        await tx.absenceRequest.updateMany({
+          where: { userId, meetingId, status: 'PENDING' },
+          data: { status: 'CANCELLED' },
+        });
+        return row;
       });
       return a;
     } catch (e: any) {
@@ -107,27 +111,29 @@ export class AttendanceService {
     const m = await this.prisma.meeting.findFirst({ where: { id: meetingId, deletedAt: null } });
     if (!m) throw new NotFoundException('Meeting tidak ditemukan');
     const now = new Date();
-    const before = await this.prisma.attendance.findUnique({
-      where: { userId_meetingId: { userId: targetUserId, meetingId } },
+    return this.prisma.$transaction(async (tx: any) => {
+      const before = await tx.attendance.findUnique({
+        where: { userId_meetingId: { userId: targetUserId, meetingId } },
+      });
+      const data = {
+        status: status as any, source: 'MANUAL' as const,
+        adjustedAt: now, adjustmentReason: reason, note: '',
+      };
+      const a = before
+        ? await tx.attendance.update({ where: { id: before.id }, data })
+        : await tx.attendance.create({
+            data: { userId: targetUserId, meetingId, submittedAt: now, ...data },
+          });
+      await this.audit.log({
+        actorId, action: 'attendance.adjust', entity: 'Attendance', entityId: a.id,
+        oldValue: (before?.status ?? null) as any, newValue: { status } as any, reason,
+      }, tx);
+      await this.notif
+        .notifyUsers([targetUserId], 'attendance-adjusted', `Kehadiran dikoreksi pengurus`, reason,
+          { refType: 'Attendance', refId: a.id })
+        .catch(() => {});
+      return a;
     });
-    const data = {
-      status: status as any, source: 'MANUAL' as const,
-      adjustedAt: now, adjustmentReason: reason, note: '',
-    };
-    const a = before
-      ? await this.prisma.attendance.update({ where: { id: before.id }, data })
-      : await this.prisma.attendance.create({
-          data: { userId: targetUserId, meetingId, submittedAt: now, ...data },
-        });
-    await this.audit.log({
-      actorId, action: 'attendance.adjust', entity: 'Attendance', entityId: a.id,
-      oldValue: (before?.status ?? null) as any, newValue: { status } as any, reason,
-    });
-    await this.notif
-      .notifyUsers([targetUserId], 'attendance-adjusted', `Kehadiran dikoreksi pengurus`, reason,
-        { refType: 'Attendance', refId: a.id })
-      .catch(() => {});
-    return a;
   }
   async selfieUrl(reqUser: any, attendanceId: string, baseUrl: string) {
     const a = await this.prisma.attendance.findUnique({ where: { id: attendanceId } });

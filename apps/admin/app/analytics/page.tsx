@@ -1,16 +1,29 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
+import { Empty, Err } from '@/lib/ui';
 
 export default function Analytics() {
   const [trends, setTrends] = useState<any>({ data: [] });
   const [abs, setAbs] = useState<any[]>([]);
   const [div, setDiv] = useState<any[]>([]);
+  const [err, setErr] = useState('');
   useEffect(() => {
-    api<any>('analytics/trends?months=6').then(setTrends);
-    api<any[]>('analytics/frequent-absentees?limit=10').then(setAbs);
-    api<any[]>('analytics/by-division').then(setDiv);
+    Promise.all([
+      api<any>('analytics/trends?months=6'),
+      api<any[]>('analytics/frequent-absentees?limit=10'),
+      api<any[]>('analytics/by-division'),
+    ])
+      .then(([t, a, d]) => {
+        setTrends(t);
+        setAbs(a);
+        setDiv(d);
+      })
+      .catch((e) => setErr(e.message ?? 'Gagal memuat'));
   }, []);
+
+  if (err) return <div><h1 className="text-xl font-bold mb-4">Analitik</h1><Err msg={err} /></div>;
+  if (!trends.data?.length && !abs.length && !div.length) return <p>Memuat…</p>;
 
   return (
     <div>

@@ -13,6 +13,7 @@ async function bootstrap() {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL wajib di production');
   }
   const app = await NestFactory.create(AppModule);
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   const throttle = new SensitiveThrottleMiddleware();
   app.use(throttle.use.bind(throttle));
   app.useGlobalPipes(
@@ -24,6 +25,7 @@ async function bootstrap() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
   });
   // CORS allowlist eksplisit — PRD §18. Tanpa ALLOWED_ORIGINS = tertutup (default aman).

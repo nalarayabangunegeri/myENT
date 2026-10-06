@@ -14,13 +14,20 @@ export default function Materials() {
 
   async function upload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (!f || !title) return alert('Isi judul dulu');
+    e.target.value = '';
+    if (!f || !title) return setErr('Isi judul dulu');
+    if (f.size > 10 * 1024 * 1024) return setErr('PDF maksimal 10 MB');
+    if (f.type !== 'application/pdf') return setErr('Materi harus PDF');
     const fd = new FormData();
     fd.append('title', title);
     fd.append('file', f);
-    await api('materials', { method: 'POST', body: fd });
-    setTitle('');
-    load();
+    try {
+      await api('materials', { method: 'POST', body: fd });
+      setTitle('');
+      load();
+    } catch (er: any) {
+      setErr(er.message);
+    }
   }
 
   return (
@@ -40,7 +47,7 @@ export default function Materials() {
               <td className="p-2">{m.title}</td><td>{(m.size / 1024).toFixed(0)} KB</td>
               <td className="flex gap-2">
                 <a className="text-blue-600" href={`/api/materials/${m.id}/file`} target="_blank">Buka</a>
-                <button className="text-red-600" onClick={() => confirm('Hapus?') && api(`materials/${m.id}`, { method: 'DELETE' }).then(load)}>Hapus</button>
+                <button className="text-red-600" onClick={async () => { if (!confirm('Hapus?')) return; try { await api(`materials/${m.id}`, { method: 'DELETE' }); load(); } catch (er: any) { setErr(er.message); } }}>Hapus</button>
               </td>
             </tr>
           ))}

@@ -15,6 +15,8 @@ class MeetingsPage extends StatefulWidget {
 
 class _MeetingsPageState extends State<MeetingsPage> {
   List rows = [];
+  String? err;
+  bool loading = true;
   @override
   void initState() {
     super.initState();
@@ -22,12 +24,22 @@ class _MeetingsPageState extends State<MeetingsPage> {
   }
 
   Future<void> _load() async {
+    if (!loading) setState(() => loading = true);
     try {
       final r = await Api.get('/meetings?limit=50');
-      setState(() => rows = r['data']);
+      if (mounted) {
+        setState(() {
+          rows = r['data'];
+          err = null;
+        });
+      }
     } on MustChange {
       if (mounted) Navigator.pushReplacementNamed(context, '/login');
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) setState(() => err = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   @override
@@ -51,7 +63,7 @@ class _MeetingsPageState extends State<MeetingsPage> {
                 final mid = jsonDecode(
                   utf8.decode(base64Url.decode(_norm(payload))),
                 )['mid'];
-                final m = await Api.get('/meetings/$mid');
+                final m = await Api.get("/meetings/$mid");
                 if (!mounted) return;
                 await nav.push(
                   MaterialPageRoute(
@@ -66,33 +78,37 @@ class _MeetingsPageState extends State<MeetingsPage> {
           ),
         ],
       ),
-      body: rows.isEmpty
-          ? const Center(child: Text('Belum ada kegiatan'))
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView.builder(
-                itemCount: rows.length,
-                itemBuilder: (_, i) {
-                  final m = rows[i];
-                  return ListTile(
-                    title: Text(m['title'] ?? ''),
-                    subtitle: Text(
-                      '${wib(m['startAt'])} · ${statusLabel[m['status']] ?? m['status']}',
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : err != null
+              ? Center(child: Text(err!, semanticsLabel: 'Gagal memuat'))
+              : rows.isEmpty
+                  ? const Center(child: Text('Belum ada kegiatan'))
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.builder(
+                        itemCount: rows.length,
+                        itemBuilder: (_, i) {
+                          final m = rows[i];
+                          return ListTile(
+                            title: Text(m['title'] ?? ''),
+                            subtitle: Text(
+                              '${wib(m['startAt'])} · ${statusLabel[m['status']] ?? m['status']}',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () async {
+                              final ok = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PresensiPage(meeting: Map.from(m)),
+                                ),
+                              );
+                              if (ok == true) _load();
+                            },
+                          );
+                        },
+                      ),
                     ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () async {
-                      final ok = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PresensiPage(meeting: Map.from(m)),
-                        ),
-                      );
-                      if (ok == true) _load();
-                    },
-                  );
-                },
-              ),
-            ),
     );
   }
 }

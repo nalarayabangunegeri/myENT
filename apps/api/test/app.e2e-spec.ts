@@ -121,7 +121,7 @@ describe('vertical slice (e2e)', () => {
       .expect(201);
     let r = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'TotpPass123!' }).expect(200);
     const t0 = r.body.accessToken;
-    const setup = await request(app.getHttpServer()).post('/auth/2fa/setup').set('Authorization', `Bearer ${t0}`).expect(201);
+    const setup = await request(app.getHttpServer()).post('/auth/2fa/setup').set('Authorization', `Bearer ${t0}`).send({ password: 'TotpPass123!' }).expect(201);
     expect(setup.body.secret).toBeDefined();
     await request(app.getHttpServer()).post('/auth/2fa/enable').set('Authorization', `Bearer ${t0}`).send({ code: '000000' }).expect(401);
     await request(app.getHttpServer())
@@ -139,6 +139,19 @@ describe('vertical slice (e2e)', () => {
     expect(ok.body.accessToken).toBeDefined();
   });
 
+  it('refresh reuse ditolak (rotasi atomik)', async () => {
+    const nim = `r${uniq()}`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E Refresh', password: 'RefreshPass123!' })
+      .expect(201);
+    const login = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'RefreshPass123!' }).expect(200);
+    const r1 = await request(app.getHttpServer()).post('/auth/refresh').send({ refreshToken: login.body.refreshToken }).expect(200);
+    expect(r1.body.accessToken).toBeDefined();
+    await request(app.getHttpServer()).post('/auth/refresh').send({ refreshToken: login.body.refreshToken }).expect(401);
+  });
+
   it('request setelah PRESENT ditolak; rekap 0 sebelum finalized', async () => {
     await request(app.getHttpServer())
       .post(`/meetings/${meetingId}/absence-requests`)
@@ -147,5 +160,26 @@ describe('vertical slice (e2e)', () => {
       .expect(409);
     const recap = await request(app.getHttpServer()).get('/attendance/recap/me').set('Authorization', `Bearer ${memberT}`).expect(200);
     expect(recap.body.counted).toBe(0); // belum finalized
+  });
+
+  it('reject request jalan (bug actor string)', async () => {
+    const nim = `j${uniq()}`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E Reject', password: 'RejectPass123!' })
+      .expect(201);
+    const login = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'RejectPass123!' }).expect(200);
+    const req = await request(app.getHttpServer())
+      .post(`/meetings/${meetingId}/absence-requests`)
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .field('reasonType', 'SICK')
+      .expect(201);
+    const rej = await request(app.getHttpServer())
+      .patch(`/absence-requests/${req.body.id}/reject`)
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ reviewNote: 'e2e' })
+      .expect(200);
+    expect(rej.body.status).toBe('REJECTED');
   });
 });

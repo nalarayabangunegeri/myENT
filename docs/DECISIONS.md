@@ -132,3 +132,17 @@
 ## Gamifikasi ringan P3 (2026-10-06)
 - Streak + 4 badge dihitung saat dibaca (tanpa model): streak_7, clean_month, tasker_5, duty_star_5.
 - Terlihat di Profil mobile; leaderboard tak berubah.
+
+## Audit hardening backend+admin+mobile+infra (2026-10-06)
+- Backend: refresh revoke atomik (anti-reuse), lockout `increment` atomik, guard `select` 8 kolom,
+  `me` tak bocorkan secret, throttle 429+Retry-After, tick-lock gagal = jangan jalan,
+  presensi/adjust/koreksi/pinjam dalam transaksi, sharp pixel-cap + resize, signed URL fail-fast prod.
+- Breaking: `POST /auth/2fa/setup` wajib `{ password }`; `GET /loans/me|/loans` paginasi
+  `{ page,limit,total,data }`. E2E 13/13 (guard refresh-reuse + reject).
+- Admin BFF: teruskan content-type multipart, refresh single-flight, cap 413, origin same-host bila
+  tanpa allowlist, `dl()` via blob+revoke; halaman: busy-guard, export bawa filter, tanpa `alert(password)`.
+- Mobile: 8 endpoint kutip-tunggal → ganda (QR/izin/kumpul/materi/notif mati total sebelumnya);
+  409 diverifikasi `attendance/me`, backoff retry, FCM onTokenRefresh + permission + POST_NOTIFICATIONS.
+- Infra: compose healthcheck berurutan + restart + log 10m×3; Caddy header+log; backup via `exec -T`
+  + prune 7 hari; rollback pre-backup; entrypoint single-replika.
+- CI: pin bun 1.3.12, `prisma validate` + `api lint`, job `image` build Dockerfile prod.
