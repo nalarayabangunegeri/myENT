@@ -79,6 +79,13 @@
 - Admin: pengumuman, analitik+poin, QR+lokasi+koreksi di detail kegiatan.
 - Tunda: versi API `/v1` (saat breaking change pertama), kredensial R2/FCM/SMTP + uji live.
 
+## Empat fitur susulan (2026-10-06)
+- 2FA TOTP stdlib (tanpa dep; otplib v13 ESM-only tak jalan di Jest) + lockout dipakai ulang untuk brute-force kode.
+- Pengumuman target divisi + angkatan (fan-out saat kirim).
+- Maintenance log barang (created/updated/returned/damaged) + endpoint riwayat.
+- Officer scope se-divisi di list + decide + adjust + histori meeting; tanpa self-approval.
+- UI: 2FA di profil + login (admin & mobile), filter angkatan, riwayat barang.
+
 ## Rollout 150 anggota (2026-10-06)
 - Throttle dua ember (IP 600 + user 60/mnt) agar wifi kampus tak saling blokir; sub JWT hanya kunci.
 - Volume `uploads` + cron tar (pg_dump tak mencakup file); rencana rollout bertahap di DEPLOY.md.

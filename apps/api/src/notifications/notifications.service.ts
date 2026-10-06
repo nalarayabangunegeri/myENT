@@ -16,9 +16,9 @@ export class NotificationsService {
     return { count: userIds.length };
   }
 
-  async broadcast(division: string | undefined, type: string, title: string, body = '') {
+  async broadcast(division: string | undefined, type: string, title: string, body = '', cohortYear?: number) {
     const users = await this.prisma.user.findMany({
-      where: { status: 'ACTIVE', ...(division ? { division } : {}) },
+      where: { status: 'ACTIVE', ...(division ? { division } : {}), ...(cohortYear ? { cohortYear } : {}) },
       select: { id: true },
     });
     return this.notifyUsers(users.map((u) => u.id), type, title, body);

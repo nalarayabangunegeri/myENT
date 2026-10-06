@@ -111,6 +111,34 @@ describe('vertical slice (e2e)', () => {
     delete process.env.LOGIN_MAX_ATTEMPTS;
   });
 
+  it('2FA: setup, enable, login dua langkah', async () => {
+    const { totp } = await import('../src/auth/totp');
+    const nim = `t${uniq()}`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E 2FA', password: 'TotpPass123!' })
+      .expect(201);
+    let r = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'TotpPass123!' }).expect(200);
+    const t0 = r.body.accessToken;
+    const setup = await request(app.getHttpServer()).post('/auth/2fa/setup').set('Authorization', `Bearer ${t0}`).expect(201);
+    expect(setup.body.secret).toBeDefined();
+    await request(app.getHttpServer()).post('/auth/2fa/enable').set('Authorization', `Bearer ${t0}`).send({ code: '000000' }).expect(401);
+    await request(app.getHttpServer())
+      .post('/auth/2fa/enable')
+      .set('Authorization', `Bearer ${t0}`)
+      .send({ code: String(totp(setup.body.secret)).padStart(6, '0') })
+      .expect(201);
+    r = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'TotpPass123!' }).expect(200);
+    expect(r.body.twoFactorRequired).toBe(true);
+    await request(app.getHttpServer()).post('/auth/2fa/verify').send({ pendingToken: r.body.pendingToken, code: '000000' }).expect(401);
+    const ok = await request(app.getHttpServer())
+      .post('/auth/2fa/verify')
+      .send({ pendingToken: r.body.pendingToken, code: String(totp(setup.body.secret)).padStart(6, '0') })
+      .expect(200);
+    expect(ok.body.accessToken).toBeDefined();
+  });
+
   it('request setelah PRESENT ditolak; rekap 0 sebelum finalized', async () => {
     await request(app.getHttpServer())
       .post(`/meetings/${meetingId}/absence-requests`)

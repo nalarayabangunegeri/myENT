@@ -190,10 +190,27 @@ model Item {
   condition String     @default("Baik")
   status    ItemStatus @default(AVAILABLE)
   loans     Loan[]
+  history   ItemHistory[]
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("items")
+}
+
+// Riwayat perawatan barang: tiap perubahan kondisi/status + kembali-rusak tercatat.
+model ItemHistory {
+  id        String   @id @default(uuid())
+  itemId    String   @map("item_id")
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  actorId   String?  @map("actor_id")
+  action    String
+  oldValue  String   @default("") @map("old_value")
+  newValue  String   @default("") @map("new_value")
+  note      String   @default("")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([itemId, createdAt])
+  @@map("item_history")
 }
 
 model Loan {
@@ -352,6 +369,8 @@ model User {
   privacyConsentedAt  DateTime?  @map("privacy_consented_at") @db.Timestamptz
   failedLogins        Int        @default(0) @map("failed_logins")
   lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz
+  totpSecret          String?    @map("totp_secret")
+  totpEnabled         Boolean    @default(false) @map("totp_enabled")
   createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 

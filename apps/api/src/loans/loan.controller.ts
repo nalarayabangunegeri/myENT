@@ -26,6 +26,11 @@ class ReturnDto {
   @IsOptional() damaged?: boolean;
 }
 
+class PageQuery {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number = 20;
+}
+
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller()
 export class LoanController {
@@ -47,6 +52,12 @@ export class LoanController {
   @Get('items')
   items(@Query('status') status?: string) {
     return this.loans.listItems(status);
+  }
+
+  @Roles('OFFICER', 'ADMIN')
+  @Get('items/:id/history')
+  history(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
+    return this.loans.itemHistory(id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')

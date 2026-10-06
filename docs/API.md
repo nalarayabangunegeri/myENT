@@ -17,6 +17,10 @@ Header: `Authorization: Bearer <accessToken>` (umur 15 mnt).Semua respons error:
 | `POST /auth/change-password` | login | `{ oldPassword, newPassword(min 10) }` | Mencabut semua sesi |
 | `POST /auth/forgot-password` | — | `{ nim }` | Selalu 200 (anti-enumerasi); butuh email di profil + SMTP |
 | `POST /auth/reset-via-email` | — | `{ token, newPassword }` | Sekali pakai, 1 jam |
+| `POST /auth/2fa/setup` | login | — | → `{ secret, otpauthUrl }` (opt-in authenticator) |
+| `POST /auth/2fa/enable` | login | `{ code }` | Aktif setelah kode benar |
+| `POST /auth/2fa/disable` | login | `{ password }` | Matikan + hapus secret |
+| `POST /auth/2fa/verify` | — | `{ pendingToken, code }` | Langkah kedua login (token 5 mnt) |
 
 `mustChangePassword=true` (akun baru/reset): endpoint lain 401 sampai ganti password.
 
@@ -87,6 +91,17 @@ Isi push FCM tidak memuat alasan sensitif; in-app adalah sumber kebenaran (reten
 `POST /materials`, `POST /auth/reset-password` (oleh pengurus).
 
 Rincian domain (status, rumus, mapping): `PRD.md`. Cara engineering: `AGENTS.md`.
+
+## Tambahan: 2FA, target pengumuman, maintenance, scope
+
+```text
+POST /announcements { title, body?, division?, cohortYear? }  # pengurus
+GET  /items/:id/history        # pengurus; riwayat kondisi/status barang
+GET  /users?division=          # admin saja; officer otomatis se-divisi
+```
+
+Officer scope se-divisi (kecuali ADMIN): daftar user, review request/klaim/adjust,
+dan riwayat kehadiran per meeting. Review request/klaim sendiri ditolak (403).
 
 ## Piket & inventaris
 

@@ -4,7 +4,7 @@ import { api } from '@/lib/client';
 
 export default function Announce() {
   const [rows, setRows] = useState<any[]>([]);
-  const [form, setForm] = useState({ title: '', body: '', division: '' });
+  const [form, setForm] = useState({ title: '', body: '', division: '', cohort: '' });
   const load = () => api<{ data: any[] }>('audit-logs?action=announcement.create&limit=20').then((r) => setRows(r.data));
   useEffect(() => {
     load();
@@ -15,9 +15,9 @@ export default function Announce() {
     if (!confirm(`Kirim ke ${form.division || 'semua anggota aktif'}?`)) return;
     await api('announcements', {
       method: 'POST',
-      body: JSON.stringify({ title: form.title, body: form.body, division: form.division || undefined }),
+      body: JSON.stringify({ title: form.title, body: form.body, division: form.division || undefined, cohortYear: form.cohort ? Number(form.cohort) : undefined }),
     });
-    setForm({ title: '', body: '', division: '' });
+    setForm({ title: '', body: '', division: '', cohort: '' });
     load();
   }
 
@@ -28,6 +28,7 @@ export default function Announce() {
         <input className="border p-2 rounded" placeholder="Judul" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required minLength={3} />
         <textarea className="border p-2 rounded" placeholder="Isi" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
         <input className="border p-2 rounded" placeholder="Divisi target (kosong = semua)" value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })} />
+        <input className="border p-2 rounded" placeholder="Angkatan (kosong = semua)" value={form.cohort} onChange={(e) => setForm({ ...form, cohort: e.target.value })} />
         <button className="bg-blue-600 text-white p-2 rounded">Kirim broadcast</button>
       </form>
       <h2 className="font-bold mb-2">Terkirim</h2>

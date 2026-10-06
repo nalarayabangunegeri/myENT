@@ -79,8 +79,8 @@ export class AttendanceController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('meetings/:id/attendance')
-  byMeeting(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
-    return this.attendance.listByMeeting(id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
+  byMeeting(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
+    return this.attendance.listByMeeting(req.user, id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('OFFICER', 'ADMIN')

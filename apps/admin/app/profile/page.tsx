@@ -5,6 +5,8 @@ export default function Profile() {
   const [oldP, setOldP] = useState('');
   const [newP, setNewP] = useState('');
   const [msg, setMsg] = useState('');
+  const [secret, setSecret] = useState('');
+  const [code, setCode] = useState('');
 
   async function ganti(e: React.FormEvent) {
     e.preventDefault();
@@ -38,6 +40,38 @@ export default function Profile() {
         <button className="bg-blue-600 text-white p-2 rounded">Ganti password</button>
       </form>
       <button className="bg-red-600 text-white px-4 py-2 rounded text-sm" onClick={() => confirm('Keluar?') && keluar()}>Keluar</button>
+      <h2 className="text-lg font-bold mt-6 mb-2">2FA (aplikasi authenticator)</h2>
+      {!secret ? (
+        <button
+          className="bg-gray-200 px-2 py-1 rounded text-sm"
+          onClick={async () => {
+            const r = await fetch('/api/auth/2fa/setup', { method: 'POST' }).then((x) => x.json());
+            setSecret(`${r.secret} || ${r.otpauthUrl}`);
+          }}
+        >
+          Mulai setup 2FA
+        </button>
+      ) : (
+        <div className="bg-white p-4 rounded shadow grid gap-2 text-sm">
+          <p className="break-all">Secret/URL: {secret}</p>
+          <p>Masukkan ke aplikasi authenticator, lalu verifikasi kode 6 digit:</p>
+          <input className="border p-2 rounded" placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} />
+          <button
+            className="bg-blue-600 text-white p-2 rounded"
+            onClick={async () => {
+              const r = await fetch('/api/auth/2fa/enable', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ code }),
+              });
+              setMsg(r.ok ? '2FA aktif.' : 'Kode salah.');
+              if (r.ok) setSecret('');
+            }}
+          >
+            Aktifkan
+          </button>
+        </div>
+      )}
     </div>
   );
 }

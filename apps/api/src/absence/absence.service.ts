@@ -71,8 +71,13 @@ export class AbsenceService {
     return { page, limit, total, data };
   }
 
-  async listByMeeting(meetingId: string, page: number, limit: number, status?: string) {
-    const where: any = { meetingId, ...(status ? { status } : {}) };
+  async listByMeeting(actor: { id: string; role: string; division: string }, meetingId: string, page: number, limit: number, status?: string) {
+    const where: any = {
+      meetingId,
+      ...(status ? { status } : {}),
+      // Officer scope se-divisi (backlog); ADMIN bebas.
+      ...(actor.role === 'ADMIN' ? {} : { user: { division: actor.division } }),
+    };
     const [total, data] = await Promise.all([
       this.prisma.absenceRequest.count({ where }),
       this.prisma.absenceRequest.findMany({

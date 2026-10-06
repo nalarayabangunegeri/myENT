@@ -24,6 +24,7 @@ class ListQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number = 20;
   @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsString() division?: string;
 }
 
 class UpdateUserDto {
@@ -81,12 +82,17 @@ export class UsersController {
   }
 
   @Get()
-  async list(@Query() q: ListQuery) {
+  async list(@Req() req: any, @Query() q: ListQuery) {
     const page = q.page ?? 1;
     const limit = Math.min(q.limit ?? 20, 100);
-    const where: any = q.search
-      ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { nim: { contains: q.search, mode: 'insensitive' } }] }
-      : {};
+    // Officer scope se-divisi (backlog); ADMIN bebas + boleh filter divisi.
+    const division = req.user.role === 'ADMIN' ? q.division : req.user.division;
+    const where: any = {
+      ...(division !== undefined ? { division } : {}),
+      ...(q.search
+        ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { nim: { contains: q.search, mode: 'insensitive' } }] }
+        : {}),
+    };
     const [total, data] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({

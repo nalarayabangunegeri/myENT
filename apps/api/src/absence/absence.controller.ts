@@ -53,8 +53,8 @@ export class AbsenceController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('meetings/:id/absence-requests')
-  byMeeting(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
-    return this.absence.listByMeeting(id, q.page ?? 1, Math.min(q.limit ?? 20, 100), q.status);
+  byMeeting(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
+    return this.absence.listByMeeting(req.user, id, q.page ?? 1, Math.min(q.limit ?? 20, 100), q.status);
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')

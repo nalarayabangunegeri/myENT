@@ -76,8 +76,11 @@ export class AttendanceService {
     return { page, limit, total, data };
   }
 
-  async listByMeeting(meetingId: string, page: number, limit: number) {
-    const where = { meetingId };
+  async listByMeeting(actor: { role: string; division: string }, meetingId: string, page: number, limit: number) {
+    const where: any = {
+      meetingId,
+      ...(actor.role === 'ADMIN' ? {} : { user: { division: actor.division } }),
+    };
     const [total, data] = await Promise.all([
       this.prisma.attendance.count({ where }),
       this.prisma.attendance.findMany({

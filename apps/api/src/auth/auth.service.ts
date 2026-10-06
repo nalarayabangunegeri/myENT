@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
+import { generateSecret, keyuri, verifyTotp } from './totp';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -65,6 +66,11 @@ export class AuthService {
     }
     if (user.failedLogins > 0 || user.lockedUntil)
       await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
+    // 2FA aktif → langkah kedua via token sekali-pakai 5 menit.
+    if (user.totpEnabled && user.totpSecret) {
+      const pendingToken = await this.jwt.signAsync({ sub: user.id, purpose: '2fa' }, { expiresIn: '5m' } as any);
+      return { twoFactorRequired: true, pendingToken };
+    }
     return this.issueTokens(user.id);
   }
 
@@ -166,8 +172,56 @@ export class AuthService {
     return { ok: true };
   }
 
-  private async sendMail(to: string, subject: string, text: string) {
-    if (!process.env.SMTP_HOST) {
+  // 2FA TOTP opt-in (authenticator app). Secret disimpan, aktif setelah kode benar.
+  async setup2fa(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const secret = generateSecret();
+    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: secret } });
+    return { secret, otpauthUrl: keyuri(user.nim, secret) };
+  }
+
+  async enable2fa(userId: string, code: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.totpSecret || !verifyTotp(user.totpSecret, code))
+      throw new UnauthorizedException('Kode salah');
+    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: true } });
+    await this.audit.log({ actorId: userId, action: 'auth.2fa-enable', entity: 'User', entityId: userId }).catch(() => {});
+    return { ok: true };
+  }
+
+  async disable2fa(userId: string, password: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!(await bcrypt.compare(password, user.passwordHash))) throw new UnauthorizedException('Password salah');
+    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: null, totpEnabled: false } });
+    await this.audit.log({ actorId: userId, action: 'auth.2fa-disable', entity: 'User', entityId: userId }).catch(() => {});
+    return { ok: true };
+  }
+
+  async verify2fa(pendingToken: string, code: string) {
+    let payload: any;
+    try {
+      payload = await this.jwt.verifyAsync(pendingToken);
+    } catch {
+      throw new UnauthorizedException('Sesi 2FA kedaluwarsa');
+    }
+    if (payload.purpose !== '2fa') throw new UnauthorizedException('Token tidak valid');
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || user.status !== 'ACTIVE' || !user.totpEnabled || !user.totpSecret)
+      throw new UnauthorizedException('Unauthorized');
+    if (user.lockedUntil && user.lockedUntil > new Date()) throw new UnauthorizedException('Akun terkunci sementara');
+    if (!verifyTotp(user.totpSecret, code)) {
+      const failed = user.failedLogins + 1;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { failedLogins: failed, ...(failed >= Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5) ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_1000) } : {}) },
+      });
+      throw new UnauthorizedException('Kode salah');
+    }
+    await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
+    return { ...(await this.issueTokens(user.id)), mustChangePassword: user.mustChangePassword };
+  }
+
+  private async sendMail(to: string, subject: string, text: string) {    if (!process.env.SMTP_HOST) {
       if (process.env.NODE_ENV !== 'production') console.log(`[mail:dev] to=${to} ${text}`);
       return;
     }

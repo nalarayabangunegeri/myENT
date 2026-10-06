@@ -21,6 +21,7 @@ class AnnounceDto {
   @IsString() @MinLength(3) @MaxLength(200) title!: string;
   @IsString() @IsOptional() @MaxLength(2000) body?: string;
   @IsString() @IsOptional() @MaxLength(50) division?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(2000) @Max(2100) cohortYear?: number;
 }
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -58,10 +59,10 @@ export class NotificationsController {
   @Roles('OFFICER', 'ADMIN')
   @Post('announcements')
   async announce(@Req() req: any, @Body() dto: AnnounceDto) {
-    const r = await this.notif.broadcast(dto.division, 'announcement', dto.title, dto.body ?? '');
+    const r = await this.notif.broadcast(dto.division, 'announcement', dto.title, dto.body ?? '', dto.cohortYear);
     await this.audit.log({
       actorId: req.user.id, action: 'announcement.create', entity: 'Announcement',
-      entityId: `${Date.now()}`, newValue: { title: dto.title, count: r.count } as any,
+      entityId: `${Date.now()}`, newValue: { title: dto.title, count: r.count, division: dto.division ?? null, cohortYear: dto.cohortYear ?? null } as any,
     });
     return r;
   }

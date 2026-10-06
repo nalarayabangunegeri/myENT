@@ -10,6 +10,7 @@ export default function Inventory() {
   const [form, setForm] = useState({ name: '', code: '', category: '' });
   const [filter, setFilter] = useState('');
   const [ret, setRet] = useState<{ id: string; damaged: boolean; note: string } | null>(null);
+  const [hist, setHist] = useState<any[]>([]);
   const load = () => {
     api<any[]>('items').then(setItems).catch((e) => setErr(e.message));
     api<any[]>(`loans${filter ? `?status=${filter}` : ''}`).then(setLoans).catch((e) => setErr(e.message));
@@ -57,10 +58,20 @@ export default function Inventory() {
       </form>
       {items.length === 0 ? <Empty /> : (
         <table className="w-full bg-white rounded shadow text-sm mb-4">
-          <thead><tr className="text-left border-b"><th className="p-2">Kode</th><th>Nama</th><th>Kondisi</th><th>Status</th></tr></thead>
+          <thead><tr className="text-left border-b"><th className="p-2">Kode</th><th>Nama</th><th>Kondisi</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {items.map((it) => (
-              <tr key={it.id} className="border-b"><td className="p-2">{it.code}</td><td>{it.name}</td><td>{it.condition}</td><td>{it.status}</td></tr>
+              <tr key={it.id} className="border-b"><td className="p-2">{it.code}</td><td>{it.name}</td><td>{it.condition}</td><td>{it.status}</td><td><button className="text-blue-600" onClick={async () => { const r = await api<{ data: any[] }>(`items/${it.id}/history?limit=20`); setHist(r.data); }}>Riwayat</button></td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {hist.length > 0 && (
+        <table className="w-full bg-white rounded shadow text-sm mb-4">
+          <thead><tr className="text-left border-b"><th className="p-2">Waktu</th><th>Aksi</th><th>Sebelum</th><th>Sesudah</th><th>Catatan</th></tr></thead>
+          <tbody>
+            {hist.map((h: any) => (
+              <tr key={h.id} className="border-b"><td className="p-2">{new Date(h.createdAt).toLocaleString('id-ID')}</td><td>{h.action}</td><td>{h.oldValue}</td><td>{h.newValue}</td><td>{h.note}</td></tr>
             ))}
           </tbody>
         </table>

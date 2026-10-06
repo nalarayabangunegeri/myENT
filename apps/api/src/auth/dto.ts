@@ -52,3 +52,22 @@ export class ResetViaEmailDto {
   @MaxLength(128)
   newPassword!: string;
 }
+
+export class TwoFaCodeDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  code!: string;
+}
+
+export class Verify2faDto extends TwoFaCodeDto {
+  @IsString()
+  @IsNotEmpty()
+  pendingToken!: string;
+}
+
+export class Disable2faDto {
+  @IsString()
+  @IsNotEmpty()
+  password!: string;
+}

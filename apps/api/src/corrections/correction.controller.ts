@@ -45,8 +45,8 @@ export class CorrectionController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('meetings/:id/corrections')
-  byMeeting(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
-    return this.corrections.listByMeeting(id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
+  byMeeting(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
+    return this.corrections.listByMeeting(req.user, id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, ForgotDto, LoginDto, RefreshDto, ResetPasswordDto, ResetViaEmailDto } from './dto';
+import { ChangePasswordDto, Disable2faDto, ForgotDto, LoginDto, RefreshDto, ResetPasswordDto, ResetViaEmailDto, TwoFaCodeDto, Verify2faDto } from './dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
@@ -40,6 +40,30 @@ export class AuthController {
   @HttpCode(200)
   resetViaEmail(@Body() dto: ResetViaEmailDto) {
     return this.auth.resetViaEmail(dto.token, dto.newPassword);
+  }
+
+  @Post('2fa/verify')
+  @HttpCode(200)
+  verify2fa(@Body() dto: Verify2faDto) {
+    return this.auth.verify2fa(dto.pendingToken, dto.code);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/setup')
+  setup2fa(@Req() req: any) {
+    return this.auth.setup2fa(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/enable')
+  enable2fa(@Req() req: any, @Body() dto: TwoFaCodeDto) {
+    return this.auth.enable2fa(req.user.id, dto.code);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/disable')
+  disable2fa(@Req() req: any, @Body() dto: Disable2faDto) {
+    return this.auth.disable2fa(req.user.id, dto.password);
   }
 
   @Post('logout')
