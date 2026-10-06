@@ -11,10 +11,12 @@ export default function Recap() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [err, setErr] = useState('');
-  const [q, setQ] = useState({ search: '', sortBy: 'name', order: 'asc' });
+  const [q, setQ] = useState({ search: '', sortBy: 'name', order: 'asc', from: '', to: '' });
   const load = (p = page) => {
     setErr('');
     const params = new URLSearchParams({ limit: `${LIMIT}`, page: `${p}`, search: q.search, sortBy: q.sortBy, order: q.order });
+    if (q.from) params.set('from', new Date(q.from).toISOString());
+    if (q.to) params.set('to', new Date(q.to).toISOString());
     api<{ data: any[]; total: number }>(`attendance/recap?${params}`)
       .then((r) => {
         setRows(r.data);
@@ -28,7 +30,11 @@ export default function Recap() {
   }, []);
 
   function exp() {
-    dl('/api/attendance/recap/export.xlsx', 'rekap.xlsx');
+    const params = new URLSearchParams();
+    if (q.from) params.set('from', new Date(q.from).toISOString());
+    if (q.to) params.set('to', new Date(q.to).toISOString());
+    const s = params.toString();
+    dl(`/api/attendance/recap/export.xlsx${s ? `?${s}` : ''}`, 'rekap.xlsx');
   }
 
   return (
@@ -46,6 +52,8 @@ export default function Recap() {
         <select className="border p-2 rounded" value={q.order} onChange={(e) => setQ({ ...q, order: e.target.value })}>
           <option>asc</option><option>desc</option>
         </select>
+        <input className="border p-2 rounded" type="date" value={q.from} onChange={(e) => setQ({ ...q, from: e.target.value })} />
+        <input className="border p-2 rounded" type="date" value={q.to} onChange={(e) => setQ({ ...q, to: e.target.value })} />
         <button className="bg-gray-200 px-2 rounded" onClick={() => load(1)}>Terapkan</button>
       </div>
       {rows.length === 0 ? <Empty /> : (

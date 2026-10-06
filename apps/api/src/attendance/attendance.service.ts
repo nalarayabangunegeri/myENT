@@ -134,9 +134,14 @@ export class AttendanceService {
     return { url: await this.storage.signedUrl(a.selfieObjectKey, baseUrl) };
   }
 
-  private countedWhere(): any {
+  private countedWhere(from?: Date, to?: Date): any {
     // Piket dikecualikan dari % rekap rapat (punya ringkasan sendiri).
-    return { meeting: { finalizedAt: { not: null }, status: { not: 'CANCELLED' }, deletedAt: null, isDuty: false } };
+    return {
+      meeting: {
+        finalizedAt: { not: null }, status: { not: 'CANCELLED' }, deletedAt: null, isDuty: false,
+        ...(from || to ? { startAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+      },
+    };
   }
 
   // Rekap pribadi (PRD §14.2–14.3): hanya milik sendiri; koreksi MANUAL terlihat + alasannya (BR-21).
@@ -166,7 +171,7 @@ export class AttendanceService {
 
   // Rekap pengurus (PRD §14.4): search + sort di server + pagination.
   // ponytail: agregasi in-memory (skala UKM). Ceiling: pindah ke GROUP BY + window function saat ribuan baris.
-  async recapAll(search: string | undefined, sortBy: string, order: 'asc' | 'desc', page: number, limit: number) {
+  async recapAll(search: string | undefined, sortBy: string, order: 'asc' | 'desc', page: number, limit: number, from?: Date, to?: Date) {
     const allowed = ['name', 'present', 'permitted', 'sick', 'dispensation', 'absent', 'percentage'];
     if (!allowed.includes(sortBy)) throw new BadRequestException('Kolom sort tidak diizinkan');
     const users = await this.prisma.user.findMany({
@@ -178,7 +183,7 @@ export class AttendanceService {
     });
     const groups = await this.prisma.attendance.groupBy({
       by: ['userId', 'status'],
-      where: { userId: { in: users.map((u) => u.id) }, ...this.countedWhere() },
+      where: { userId: { in: users.map((u) => u.id) }, ...this.countedWhere(from, to) },
       _count: true,
     });
     const per = new Map<string, Record<string, number>>();

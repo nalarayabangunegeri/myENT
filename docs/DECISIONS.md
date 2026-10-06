@@ -111,6 +111,12 @@
   maks/anggota (config 2), overdue+reminder via tick, foto ikut retensi.
 - UI: admin inventaris + piket; mobile tab Pinjam + ringkasan piket di Riwayat.
 
+## Batch saran eksternal (2026-10-06)
+- Deep-link notif (refType/refId → tab) + channel Android presensi/info; FCM data payload.
+- BIWEEKLY (interval 14d); monthly-tanggal-N ditolak (zona waktu/Feb30) sampai ada kebutuhan.
+- Export rekap + filter periode; kolom kustom ditolak (format baku melindungi pengurus).
+- Silent data + halaman perangkat-login ditunda (tanpa kebutuhan).
+
 ## Gamifikasi ringan P3 (2026-10-06)
 - Streak + 4 badge dihitung saat dibaca (tanpa model): streak_7, clean_month, tasker_5, duty_star_5.
 - Terlihat di Profil mobile; leaderboard tak berubah.

@@ -7,13 +7,14 @@ import 'features/notifications/notif_page.dart';
 import 'features/profile/profile_page.dart';
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  final int initialTab;
+  const HomeShell({super.key, this.initialTab = 0});
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int i = 0;
+  late int i = widget.initialTab;
   final pages = const [MeetingsPage(), TugasPage(), HistoryPage(), AbsencePage(), NotifPage(), ProfilePage()];
   @override
   Widget build(BuildContext context) {

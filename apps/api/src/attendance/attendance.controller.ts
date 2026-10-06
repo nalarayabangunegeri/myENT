@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, Res, Upl
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { toXlsx } from '../common/xlsx';
 import { recapPdf } from '../common/recap-pdf';
 import { verifyQr } from '../meetings/qr.rules';
@@ -35,6 +35,8 @@ class RecapQuery extends PageQuery {
   @IsOptional() @IsString() @MaxLength(100) search?: string;
   @IsOptional() @IsString() sortBy?: string;
   @IsOptional() @IsIn(['asc', 'desc']) order?: 'asc' | 'desc';
+  @IsOptional() @IsDate() @Type(() => Date) from?: Date;
+  @IsOptional() @IsDate() @Type(() => Date) to?: Date;
 }
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -103,14 +105,14 @@ export class AttendanceController {
   @Get('attendance/recap')
   recap(@Query() q: RecapQuery) {
     return this.attendance.recapAll(
-      q.search, q.sortBy ?? 'name', q.order ?? 'asc', q.page ?? 1, Math.min(q.limit ?? 20, 100),
+      q.search, q.sortBy ?? 'name', q.order ?? 'asc', q.page ?? 1, Math.min(q.limit ?? 20, 100), q.from, q.to,
     );
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('attendance/recap/export.xlsx')
-  async recapXlsx(@Res({ passthrough: true }) res: Response) {
-    const r = await this.attendance.recapAll(undefined, 'name', 'asc', 1, 5000);
+  async recapXlsx(@Query() q: RecapQuery, @Res({ passthrough: true }) res: Response) {
+    const r = await this.attendance.recapAll(undefined, 'name', 'asc', 1, 5000, q.from, q.to);
     const buf = await toXlsx(
       ['Nama', 'NIM', 'Divisi', 'Hadir', 'Izin', 'Sakit', 'Dispensasi', 'Alpha', 'Persentase'],
       r.data.map((x: any) => [x.user.name, x.user.nim, x.user.division, x.present, x.permitted, x.sick, x.dispensation, x.absent, x.percentage ?? '–']),

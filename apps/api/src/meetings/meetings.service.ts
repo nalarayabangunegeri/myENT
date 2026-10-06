@@ -20,7 +20,7 @@ export interface MeetingInput {
   latitude?: number | null;
   longitude?: number | null;
   radiusM?: number | null;
-  recurrence?: 'NONE' | 'WEEKLY';
+  recurrence?: 'NONE' | 'WEEKLY' | 'BIWEEKLY';
   recurrenceCount?: number;
 }
 
@@ -35,9 +35,9 @@ export class MeetingsService {
 
   async create(actorId: string, dto: MeetingInput & { status?: 'DRAFT' | 'PUBLISHED' }) {
     assertWindow(dto);
-    if (dto.recurrence && !['NONE', 'WEEKLY'].includes(dto.recurrence))
-      throw new BadRequestException('Recurrence hanya NONE/WEEKLY');
-    if (dto.recurrence === 'WEEKLY' && !(dto.recurrenceCount! >= 2 && dto.recurrenceCount! <= 52))
+    if (dto.recurrence && !['NONE', 'WEEKLY', 'BIWEEKLY'].includes(dto.recurrence))
+      throw new BadRequestException('Recurrence hanya NONE/WEEKLY/BIWEEKLY');
+    if (dto.recurrence && dto.recurrence !== 'NONE' && !(dto.recurrenceCount! >= 2 && dto.recurrenceCount! <= 52))
       throw new BadRequestException('recurrenceCount 2–52');
     const m = await this.prisma.meeting.create({
       data: {
@@ -53,7 +53,7 @@ export class MeetingsService {
         longitude: dto.longitude ?? null,
         radiusM: dto.radiusM ?? null,
         recurrence: dto.recurrence ?? 'NONE',
-        recurrenceCount: dto.recurrence === 'WEEKLY' ? dto.recurrenceCount! : 0,
+        recurrenceCount: dto.recurrence && dto.recurrence !== 'NONE' ? dto.recurrenceCount! : 0,
       },
     });
     await this.audit.log({ actorId, action: 'meeting.create', entity: 'Meeting', entityId: m.id });
@@ -270,8 +270,9 @@ export class MeetingsService {
   }
 
   // Backlog recurring (§22.3): seri WEEKLY sederhana — anak selalu DRAFT untuk direview.
+  // Backlog recurring (§22.3): seri mingguan/2-mingguan — anak selalu DRAFT untuk direview.
   async spawnRecurrence(m: { id: string; recurrence: string; recurrenceCount: number; recurrenceParentId: string | null }) {
-    if (m.recurrence !== 'WEEKLY' || m.recurrenceCount < 2) return;
+    if ((m.recurrence !== 'WEEKLY' && m.recurrence !== 'BIWEEKLY') || m.recurrenceCount < 2) return;
     const rootId = m.recurrenceParentId ?? m.id;
     const series = await this.prisma.meeting.findMany({
       where: { OR: [{ id: rootId }, { recurrenceParentId: rootId }], deletedAt: null },
@@ -280,7 +281,7 @@ export class MeetingsService {
     });
     if (series.length >= m.recurrenceCount) return;
     const src = await this.prisma.meeting.findUniqueOrThrow({ where: { id: series[0].id } });
-    const next = new Date(src.startAt.getTime() + 7 * DAY_MS);
+    const next = new Date(src.startAt.getTime() + (src.recurrence === 'BIWEEKLY' ? 14 : 7) * DAY_MS);
     const times = duplicateTimes(src, next);
     await this.prisma.meeting.create({
       data: {

@@ -17,7 +17,7 @@ class MeetingDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(-90) @Max(90) latitude?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(-180) @Max(180) longitude?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(10) @Max(5000) radiusM?: number;
-  @IsOptional() @IsIn(['NONE', 'WEEKLY']) recurrence?: 'NONE' | 'WEEKLY';
+  @IsOptional() @IsIn(['NONE', 'WEEKLY', 'BIWEEKLY']) recurrence?: 'NONE' | 'WEEKLY' | 'BIWEEKLY';
   @IsOptional() @Type(() => Number) @IsInt() @Min(2) @Max(52) recurrenceCount?: number;
 }
 

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jurnalistik_app/core/deeplink.dart';
 import 'package:jurnalistik_app/core/helpers.dart';
 
 void main() {
@@ -19,5 +20,14 @@ void main() {
     expect(statusLabel['ABSENT'], 'Alpha');
     expect(pct(null), '–');
     expect(pct(91.7), '91.7%');
+  });
+
+  test('deep-link: tipe → tab', () {
+    expect(tabFor('AbsenceRequest'), 3);
+    expect(tabFor('Meeting'), 0);
+    expect(tabFor('Assignment'), 1);
+    expect(tabFor('Loan'), 1);
+    expect(tabFor(null), 4);
+    expect(tabFor('alien'), 4);
   });
 }

@@ -12,7 +12,7 @@ export class NotificationsService {
     await this.prisma.notification.createMany({
       data: userIds.map((userId) => ({ userId, type, title, body, ...ref })),
     });
-    this.push(userIds, title, body).catch(() => {});
+    this.push(userIds, type, title, body, ref).catch(() => {});
     return { count: userIds.length };
   }
 
@@ -54,7 +54,7 @@ export class NotificationsService {
     return { ok: true };
   }
 
-  private async push(userIds: string[], title: string, body: string) {
+  private async push(userIds: string[], type: string, title: string, body: string, ref?: { refType: string; refId: string }) {
     if (!process.env.FCM_PROJECT_ID || !process.env.GOOGLE_APPLICATION_CREDENTIALS) return;
     const devices = await this.prisma.device.findMany({ where: { userId: { in: userIds } }, select: { token: true } });
     if (!devices.length) return;
@@ -70,6 +70,9 @@ export class NotificationsService {
       await admin.messaging().sendEachForMulticast({
         tokens: devices.map((d) => d.token),
         notification: { title, body: body.slice(0, 200) },
+        // Deep-link tujuan (mobile buka layar terkait); channel dipilih dari type.
+        data: { type, refType: ref?.refType ?? '', refId: ref?.refId ?? '' },
+        android: { notification: { channelId: type.startsWith('attendance') || type.startsWith('meeting') ? 'presensi' : 'info' } },
       });
     } catch {
       /* push gagal ≠ notifikasi hilang */
