@@ -12,7 +12,7 @@ COPY --from=deps /app/apps/admin/node_modules ./apps/admin/node_modules
 COPY package.json ./
 COPY apps/admin ./apps/admin
 WORKDIR /app/apps/admin
-RUN /app/node_modules/.bin/next build
+RUN ./node_modules/.bin/next build
 
 FROM node:22-bookworm-slim AS run
 WORKDIR /app
