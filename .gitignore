@@ -1,0 +1,33 @@
+# Secret — JANGAN commit file env asli (kecuali contoh)
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# Dependencies & build
+node_modules/
+dist/
+.next/
+build/
+coverage/
+*.tsbuildinfo
+
+# Uploads & data lokal
+uploads/
+*.log
+
+# Mobile / Android
+.dart_tool/
+.flutter-plugins*
+.gradle/
+*.apk
+*.aab
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

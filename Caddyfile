@@ -1,0 +1,7 @@
+{$API_URL} {
+	reverse_proxy api:3000
+}
+
+{$ADMIN_URL} {
+	reverse_proxy admin:3102
+}

@@ -1,0 +1,123 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import * as bcrypt from 'bcryptjs';
+import sharp from 'sharp';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { AllExceptionsFilter } from '../src/common/all-exceptions.filter';
+
+// Irisan vertikal MVP: login → user → meeting → presensi → request → approve → rekap.
+// Butuh DATABASE_URL (postgres). Dijalankan di CI + lokal via pg ephemeral.
+describe('vertical slice (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let adminT: string;
+  let memberT: string;
+  let meetingId: string;
+
+  const uniq = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  beforeAll(async () => {
+    process.env.MEETING_TICK_MS = '3600_000';
+    const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = mod.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useGlobalFilters(new AllExceptionsFilter());
+    await app.init();
+    prisma = app.get(PrismaService);
+    const nim = `adm${uniq()}`;
+    await prisma.user.create({
+      data: { nim, name: 'E2E Admin', passwordHash: await bcrypt.hash('AdminPass123!', 10), role: 'ADMIN' },
+    });
+    adminT = (
+      await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'AdminPass123!' })
+    ).body.accessToken;
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('member dibuat + login', async () => {
+    const nim = `m${uniq()}`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E Member', password: 'MemberPass123!' })
+      .expect(201);
+    const r = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'MemberPass123!' }).expect(200);
+    memberT = r.body.accessToken;
+    expect(r.body.mustChangePassword).toBe(false);
+  });
+
+  it('meeting dibuat + publish + terlihat member', async () => {
+    const now = Date.now();
+    const m = await request(app.getHttpServer())
+      .post('/meetings')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({
+        title: 'E2E Rapat',
+        startAt: new Date(now - 3600_1000).toISOString(),
+        endAt: new Date(now + 3600_1000).toISOString(),
+        attendanceOpenAt: new Date(now - 3600_1000).toISOString(),
+        attendanceCloseAt: new Date(now + 3600_1000).toISOString(),
+        status: 'PUBLISHED',
+      })
+      .expect(201);
+    meetingId = m.body.id;
+    const list = await request(app.getHttpServer()).get('/meetings').set('Authorization', `Bearer ${memberT}`).expect(200);
+    expect(list.body.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it('presensi + duplikat 409 + attendance/me', async () => {
+    const jpg = await sharp({ create: { width: 32, height: 32, channels: 3, background: { r: 1, g: 2, b: 3 } } }).jpeg().toBuffer();
+    await request(app.getHttpServer())
+      .post(`/meetings/${meetingId}/attendance`)
+      .set('Authorization', `Bearer ${memberT}`)
+      .attach('selfie', jpg, 's.jpg')
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/meetings/${meetingId}/attendance`)
+      .set('Authorization', `Bearer ${memberT}`)
+      .attach('selfie', jpg, 's.jpg')
+      .expect(409);
+    const me = await request(app.getHttpServer())
+      .get(`/meetings/${meetingId}/attendance/me`)
+      .set('Authorization', `Bearer ${memberT}`)
+      .expect(200);
+    expect(me.body.status).toBe('PRESENT');
+  });
+
+  it('lockout setelah gagal berulang, pulih setelah dibuka', async () => {
+    process.env.LOGIN_MAX_ATTEMPTS = '2';
+    const nim = `k${uniq()}`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E Kunci', password: 'KunciPass123!' })
+      .expect(201);
+    const bad = { nim, password: 'salah-salah' };
+    await request(app.getHttpServer()).post('/auth/login').send(bad).expect(401);
+    await request(app.getHttpServer()).post('/auth/login').send(bad).expect(401);
+    const locked = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ nim, password: 'KunciPass123!' })
+      .expect(401);
+    expect(locked.body.message).toMatch(/terkunci/);
+    const u = await prisma.user.findUniqueOrThrow({ where: { nim } });
+    await prisma.user.update({ where: { id: u.id }, data: { failedLogins: 0, lockedUntil: null } });
+    await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'KunciPass123!' }).expect(200);
+    delete process.env.LOGIN_MAX_ATTEMPTS;
+  });
+
+  it('request setelah PRESENT ditolak; rekap 0 sebelum finalized', async () => {
+    await request(app.getHttpServer())
+      .post(`/meetings/${meetingId}/absence-requests`)
+      .set('Authorization', `Bearer ${memberT}`)
+      .field('reasonType', 'SICK')
+      .expect(409);
+    const recap = await request(app.getHttpServer()).get('/attendance/recap/me').set('Authorization', `Bearer ${memberT}`).expect(200);
+    expect(recap.body.counted).toBe(0); // belum finalized
+  });
+});

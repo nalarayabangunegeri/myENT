@@ -1,0 +1,34 @@
+import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { SensitiveThrottleMiddleware } from './common/sensitive-throttle.middleware';
+
+async function bootstrap() {
+  // Gagal cepat bila secret lemah di production (dev fallback hanya untuk lokal).
+  if (process.env.NODE_ENV === 'production') {
+    const s = process.env.JWT_SECRET ?? '';
+    if (s.length < 32) throw new Error('JWT_SECRET minimal 32 karakter di production');
+    if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL wajib di production');
+  }
+  const app = await NestFactory.create(AppModule);
+  const throttle = new SensitiveThrottleMiddleware();
+  app.use(throttle.use.bind(throttle));
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+  );
+  app.useGlobalFilters(new AllExceptionsFilter());
+  // Header keamanan transport (PRD §18). Tanpa lib — cukup untuk API tanpa SSR.
+  app.use((_req: any, res: any, next: any) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
+  // CORS allowlist eksplisit — PRD §18. Tanpa ALLOWED_ORIGINS = tertutup (default aman).
+  const origins = (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (origins.length) app.enableCors({ origin: origins });
+  await app.listen(Number(process.env.PORT ?? 3000));
+}
+bootstrap();

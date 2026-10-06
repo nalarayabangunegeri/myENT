@@ -1,0 +1,406 @@
+// M0 Fondasi — PRD §19 (User, Session, AuditLog). Meeting/M2+ menyusul.
+// M1: + Meeting (PRD §8).
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MEMBER
+  OFFICER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MeetingStatus {
+  DRAFT
+  PUBLISHED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  PERMITTED
+  SICK
+  DISPENSATION
+  ABSENT
+}
+
+enum AttendanceSource {
+  SELF
+  ABSENCE_APPROVAL
+  AUTO_ALPHA
+  MANUAL
+}
+
+enum AbsenceReason {
+  SICK
+  ACADEMIC
+  BEREAVEMENT
+  ORGANIZATION
+  DISPENSATION
+  OTHER
+}
+
+enum AbsenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model Meeting {
+  id                String        @id @default(uuid())
+  title             String
+  description       String        @default("")
+  startAt           DateTime      @map("start_at") @db.Timestamptz
+  endAt             DateTime      @map("end_at") @db.Timestamptz
+  attendanceOpenAt  DateTime      @map("attendance_open_at") @db.Timestamptz
+  attendanceCloseAt DateTime      @map("attendance_close_at") @db.Timestamptz
+  status            MeetingStatus @default(DRAFT)
+  createdBy         String        @map("created_by")
+  creator           User          @relation("MeetingCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  finalizedAt       DateTime?     @map("finalized_at") @db.Timestamptz
+  deletedAt         DateTime?     @map("deleted_at") @db.Timestamptz
+  attendances       Attendance[]
+  absenceRequests   AbsenceRequest[]
+  correctionRequests CorrectionRequest[]
+  dutyAssignments   DutyAssignment[]
+  // P2 lokasi (null = tanpa verifikasi); P1 reminder presensi.
+  latitude          Float?
+  longitude         Float?
+  radiusM           Int?          @map("radius_m")
+  notifOpenedSentAt DateTime?     @map("notif_opened_sent_at") @db.Timestamptz
+  notifClosingSentAt DateTime?    @map("notif_closing_sent_at") @db.Timestamptz
+  // Backlog recurring (§22.3): seri mingguan sederhana; anak berstatus DRAFT.
+  recurrence        String        @default("NONE")
+  recurrenceCount   Int           @default(0) @map("recurrence_count")
+  recurrenceParentId String?      @map("recurrence_parent_id")
+  recurrenceParent  Meeting?      @relation("Recurrence", fields: [recurrenceParentId], references: [id], onDelete: SetNull)
+  recurrenceChildren Meeting[]    @relation("Recurrence")
+  // Piket = meeting khusus (reuse presensi); rekap % mengecualikan duty.
+  isDuty            Boolean       @default(false) @map("is_duty")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status])
+  @@index([attendanceCloseAt])
+  @@map("meetings")
+}
+
+model Attendance {
+  id               String            @id @default(uuid())
+  userId           String            @map("user_id")
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  meetingId        String            @map("meeting_id")
+  meeting          Meeting           @relation(fields: [meetingId], references: [id], onDelete: Restrict)
+  status           AttendanceStatus
+  source           AttendanceSource
+  selfieObjectKey  String?           @map("selfie_object_key")
+  selfieDeletedAt  DateTime?         @map("selfie_deleted_at") @db.Timestamptz
+  submittedAt      DateTime          @map("submitted_at") @db.Timestamptz
+  note             String            @default("")
+  adjustedAt       DateTime?         @map("adjusted_at") @db.Timestamptz
+  adjustmentReason String            @default("") @map("adjustment_reason")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([userId, meetingId]) // BR-01
+  @@index([meetingId])
+  @@index([userId])
+  @@map("attendance")
+}
+
+model AbsenceRequest {
+  id                  String        @id @default(uuid())
+  userId              String        @map("user_id")
+  user                User          @relation("AbsenceUser", fields: [userId], references: [id], onDelete: Restrict)
+  meetingId           String        @map("meeting_id")
+  meeting             Meeting       @relation(fields: [meetingId], references: [id], onDelete: Restrict)
+  reasonType          AbsenceReason @map("reason_type")
+  reasonDetail        String        @default("") @map("reason_detail")
+  attachmentObjectKey String?       @map("attachment_object_key")
+  attachmentDeletedAt DateTime?     @map("attachment_deleted_at") @db.Timestamptz
+  status              AbsenceStatus @default(PENDING)
+  reviewerId          String?       @map("reviewer_id")
+  reviewer            User?         @relation("AbsenceReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewNote          String        @default("") @map("review_note")
+  submittedAt         DateTime      @default(now()) @map("submitted_at") @db.Timestamptz
+  reviewedAt          DateTime?     @map("reviewed_at") @db.Timestamptz
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  // BR-18: satu aktif per user per meeting — partial unique via migration SQL (Prisma tak mendukung).
+  @@index([userId, meetingId])
+  @@index([status])
+  @@map("absence_requests")
+}
+
+// Backlog §22.3: klaim koreksi anggota ("sebenarnya hadir tapi lupa").
+// Disetujui pengurus → adjust MANUAL PRESENT; ditolak → tetap. Satu aktif per meeting.
+model CorrectionRequest {
+  id           String        @id @default(uuid())
+  userId       String        @map("user_id")
+  user         User          @relation("CorrectionUser", fields: [userId], references: [id], onDelete: Restrict)
+  meetingId    String        @map("meeting_id")
+  meeting      Meeting       @relation(fields: [meetingId], references: [id], onDelete: Restrict)
+  claim        String
+  status       AbsenceStatus @default(PENDING)
+  attachmentObjectKey String? @map("attachment_object_key")
+  reviewerId   String?       @map("reviewer_id")
+  reviewer     User?         @relation("CorrectionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewNote   String        @default("") @map("review_note")
+  submittedAt  DateTime      @default(now()) @map("submitted_at") @db.Timestamptz
+  reviewedAt   DateTime?     @map("reviewed_at") @db.Timestamptz
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId, meetingId])
+  @@map("correction_requests")
+}
+
+enum ItemStatus {
+  AVAILABLE
+  BORROWED
+  MAINTENANCE
+}
+
+enum LoanStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+  CANCELLED
+}
+
+model Item {
+  id        String     @id @default(uuid())
+  name      String
+  code      String     @unique
+  category  String     @default("")
+  condition String     @default("Baik")
+  status    ItemStatus @default(AVAILABLE)
+  loans     Loan[]
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("items")
+}
+
+model Loan {
+  id           String     @id @default(uuid())
+  itemId       String     @map("item_id")
+  item         Item       @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  borrowerId   String     @map("borrower_id")
+  borrower     User       @relation("LoanBorrower", fields: [borrowerId], references: [id], onDelete: Restrict)
+  snapName     String     @map("snap_name")
+  snapNim      String     @map("snap_nim")
+  snapDivision String     @default("") @map("snap_division")
+  snapCohort   Int        @default(0) @map("snap_cohort")
+  photoOutKey  String?   @map("photo_out_key")
+  photoInKey   String?    @map("photo_in_key")
+  photoDeletedAt DateTime? @map("photo_deleted_at") @db.Timestamptz
+  noteOut      String     @default("") @map("note_out")
+  noteIn       String     @default("") @map("note_in")
+  borrowedAt   DateTime   @default(now()) @map("borrowed_at") @db.Timestamptz
+  dueAt        DateTime   @map("due_at") @db.Timestamptz
+  returnedAt   DateTime?  @map("returned_at") @db.Timestamptz
+  dueRemindedAt DateTime? @map("due_reminded_at") @db.Timestamptz
+  status       LoanStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Satu pinjam aktif per barang (tak bisa dipinjam 2 orang).
+  @@index([itemId])
+  @@index([borrowerId])
+  @@index([status])
+  @@map("loans")
+}
+
+model DutyAssignment {
+  id        String   @id @default(uuid())
+  meetingId String   @map("meeting_id")
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation("DutyUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([meetingId, userId])
+  @@index([userId])
+  @@map("duty_assignments")
+}
+
+// P1 — PRD §15
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String    @default("")
+  refType   String?   @map("ref_type")
+  refId     String?   @map("ref_id")
+  readAt    DateTime? @map("read_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model Device {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("devices")
+}
+
+model Material {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @default("")
+  objectKey   String   @map("object_key")
+  mime        String   @default("application/pdf")
+  size        Int      @default(0)
+  meetingId   String?  @map("meeting_id")
+  uploaderId  String   @map("uploader_id")
+  uploader    User     @relation("MaterialUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([meetingId])
+  @@map("materials")
+}
+
+model Assignment {
+  id            String       @id @default(uuid())
+  title         String
+  description   String       @default("")
+  meetingId     String?      @map("meeting_id")
+  deadline      DateTime     @db.Timestamptz
+  attachmentKey String?      @map("attachment_key")
+  creatorId     String       @map("creator_id")
+  creator       User         @relation("AssignmentCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  submissions   Submission[]
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("assignments")
+}
+
+model Submission {
+  id           String     @id @default(uuid())
+  assignmentId String     @map("assignment_id")
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  userId       String     @map("user_id")
+  user         User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  objectKey    String     @map("object_key")
+  submittedAt  DateTime   @map("submitted_at") @db.Timestamptz
+  reviewedAt   DateTime?  @map("reviewed_at") @db.Timestamptz
+  reviewNote   String     @default("") @map("review_note")
+  fileDeletedAt DateTime? @map("file_deleted_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([assignmentId, userId])
+  @@map("submissions")
+}
+
+model OrgConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("org_config")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("password_resets")
+}
+
+model User {
+  id                  String     @id @default(uuid())
+  nim                 String     @unique
+  name                String
+  email               String?
+  passwordHash        String     @map("password_hash")
+  role                Role       @default(MEMBER)
+  status              UserStatus @default(ACTIVE)
+  division            String     @default("")
+  cohortYear          Int        @default(0) @map("cohort_year")
+  joinedAt            DateTime   @default(now()) @map("joined_at") @db.Timestamptz
+  leftAt              DateTime?  @map("left_at") @db.Timestamptz
+  mustChangePassword  Boolean    @default(false) @map("must_change_password")
+  privacyConsentedAt  DateTime?  @map("privacy_consented_at") @db.Timestamptz
+  failedLogins        Int        @default(0) @map("failed_logins")
+  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  sessions Session[]
+  auditActor AuditLog[] @relation("AuditActor")
+  meetingsCreated Meeting[] @relation("MeetingCreator")
+  attendances Attendance[]
+  absenceRequests AbsenceRequest[] @relation("AbsenceUser")
+  absenceReviews AbsenceRequest[] @relation("AbsenceReviewer")
+  correctionRequests CorrectionRequest[] @relation("CorrectionUser")
+  correctionReviews CorrectionRequest[] @relation("CorrectionReviewer")
+  dutyAssignments DutyAssignment[] @relation("DutyUser")
+  loans Loan[] @relation("LoanBorrower")
+  notifications Notification[]
+  devices Device[]
+  materials Material[] @relation("MaterialUploader")
+  assignments Assignment[] @relation("AssignmentCreator")
+  submissions Submission[]
+  passwordResets PasswordReset[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?  @map("actor_id")
+  actor     User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String   @map("entity_id")
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([actorId, createdAt, action])
+  @@map("audit_logs")
+}

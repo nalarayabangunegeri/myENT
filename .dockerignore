@@ -1,0 +1,14 @@
+# Konteks build = root repo. Jangan kirim ini ke Docker.
+# (bun.lock + package.json SENGAJA tidak dikecualikan — dibutuhkan COPY.)
+node_modules
+apps/*/node_modules
+apps/api/dist
+apps/admin/.next
+apps/mobile/build
+apps/mobile/.dart_tool
+.git
+.env
+.env.*
+uploads
+coverage
+*.log

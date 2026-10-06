@@ -1,0 +1,11 @@
+{
+  "name": "jurnalistik-app",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "build:api": "bun --filter api build",
+    "test:api": "bun --filter api test",
+    "lint:api": "bun --filter api lint"
+  }
+}

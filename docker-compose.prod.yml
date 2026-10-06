@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jurnalistik}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?isi POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-jurnalistik}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jurnalistik}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-jurnalistik}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-jurnalistik}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?isi JWT_SECRET min 32 karakter}
+      UPLOAD_DIR: /srv/uploads
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-r2}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      MEETING_TICK_MS: ${MEETING_TICK_MS:-60000}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/srv/uploads
+    expose:
+      - "3000"
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    environment:
+      API_URL: http://api:3000
+      ALLOWED_ORIGINS: ${ADMIN_URL:?isi ADMIN_URL, mis. https://admin.contoh.id}
+    depends_on:
+      - api
+    expose:
+      - "3102"
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - admin
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:
