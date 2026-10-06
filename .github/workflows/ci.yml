@@ -28,6 +28,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install
+      - run: bun --filter api prisma:generate
       - run: bun --filter api build
       - run: bun --filter api prisma:deploy
       - run: bun --filter api test
