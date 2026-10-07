@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 // ponytail: tx opsional (single-instance Prisma). Upgrade path: pass tx client when inside $transaction (sudah didukung via param).

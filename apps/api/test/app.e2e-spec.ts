@@ -19,7 +19,7 @@ describe('vertical slice (e2e)', () => {
   const uniq = () => `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   beforeAll(async () => {
-    process.env.MEETING_TICK_MS = '3600_000';
+    process.env.MEETING_TICK_MS = '3600000';
     const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = mod.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));

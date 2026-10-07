@@ -1,4 +1,4 @@
-import { Role, User } from '@prisma/client';
+import { Role, User } from '../generated/client';
 
 // Satu policy layer — AGENTS §6. Tambah scope divisi di sini tanpa ubah controller (PRD §22.3).
 export function can(user: Pick<User, 'role'>, action: string): boolean {  if (user.role === Role.ADMIN) return true;

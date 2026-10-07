@@ -1,7 +1,8 @@
 // M0 Fondasi — PRD §19 (User, Session, AuditLog). Meeting/M2+ menyusul.
 // M1: + Meeting (PRD §8).
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated"
 }
 
 datasource db {
@@ -94,6 +95,9 @@ model Meeting {
 
   @@index([status])
   @@index([attendanceCloseAt])
+  // KURANG.md §1: anak recurring unik per (parent, startAt) — dua instance
+  // tak bisa membuat anak kembar (NULL parent = seri induk, tetap bebas).
+  @@unique([recurrenceParentId, startAt])
   @@map("meetings")
 }
 
@@ -352,6 +356,20 @@ model PasswordReset {
   @@map("password_resets")
 }
 
+// KURANG.md §4: challenge 2FA one-time — pendingToken = id challenge,
+// dikonsumsi atomik saat verifikasi (tak bisa replay).
+model TwoFaChallenge {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("two_fa_challenges")
+}
+
 model User {
   id                  String     @id @default(uuid())
   nim                 String     @unique
@@ -389,6 +407,7 @@ model User {
   assignments Assignment[] @relation("AssignmentCreator")
   submissions Submission[]
   passwordResets PasswordReset[]
+  twoFaChallenges TwoFaChallenge[]
 
   @@index([status])
   @@map("users")

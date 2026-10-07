@@ -10,5 +10,7 @@ export default defineConfig({
   },
   datasource: {
     url: process.env.DATABASE_URL ?? '',
+    // Hanya untuk `migrate diff/dev` lokal (lihat AGENTS §2).
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });
