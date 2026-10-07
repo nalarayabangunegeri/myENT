@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { API, originOk, setSession } from '@/lib/auth';
 import { clientIp, rateLimited } from '@/lib/ratelimit';
+import { turnstileBypass, turnstileSecret } from '@/lib/turnstile';
 
 async function turnstileOk(token: string | undefined, ip?: string | null) {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
-  // Tanpa secret = tolak, kecuali dimatikan eksplisit (dev lokal saja).
-  if (!secret) return process.env.TURNSTILE_DISABLED === 'true';
+  if (turnstileBypass()) return true;
+  const secret = turnstileSecret();
+  if (!secret) return false;
   if (!token) return false;
   const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
     method: 'POST',

@@ -1,13 +1,14 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { API, originOk } from '@/lib/auth';
+import { RefreshCoalescer } from '@/lib/refresh-coalescer';
 
 // Proxy umum ke API: token dari cookie httpOnly, refresh diam-diam saat 401.
-// ponytail: single-flight refresh in-memory (single instance). Ceiling: Redis saat multi-instance.
-let refreshing: Promise<boolean> | null = null;
+// Coalescing per refresh-token: sesi A tak memengaruhi sesi B (KURANG.md §7).
+const coalescer = new RefreshCoalescer();
 function doRefresh(refreshToken: string): Promise<boolean> {
-  if (!refreshing) {
-    refreshing = fetch(`${API}/auth/refresh`, {
+  return coalescer.run(refreshToken, () =>
+    fetch(`${API}/auth/refresh`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -15,16 +16,11 @@ function doRefresh(refreshToken: string): Promise<boolean> {
       .then(async (rr) => {
         if (!rr.ok) return false;
         const t = await rr.json();
-        const { cookies } = await import('next/headers');
         await (await import('@/lib/auth')).setSession(t.accessToken, t.refreshToken);
         return true;
       })
-      .catch(() => false)
-      .finally(() => {
-        refreshing = null;
-      });
-  }
-  return refreshing;
+      .catch(() => false),
+  );
 }
 async function forward(req: NextRequest, path: string, retry = true): Promise<Response> {
   const c = await cookies();
