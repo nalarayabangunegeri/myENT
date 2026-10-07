@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 
-export const API = process.env.API_URL ?? 'http://localhost:3100';
+export const API = (process.env.API_URL ?? 'http://localhost:3100').replace(/\/$/, '');
 const SECURE = process.env.NODE_ENV === 'production';
 
 export async function setSession(access: string, refresh: string) {
