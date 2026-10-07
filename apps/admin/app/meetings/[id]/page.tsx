@@ -1,7 +1,7 @@
 'use client';
 import { use, useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Empty, Err } from '@/lib/ui';
+import { Btn, Card, Empty, Err, PageHeader, StatusPill, Thead, field } from '@/lib/ui';
 
 export default function MeetingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -88,65 +88,99 @@ export default function MeetingDetail({ params }: { params: Promise<{ id: string
     }
   }
 
+  const pending = reqs.filter((r) => r.status === 'PENDING').length;
+
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Kegiatan</h1>
+    <div className="space-y-4">
+      <PageHeader
+        title="Detail Kegiatan"
+        sub={`${reqs.filter((r) => r.status === 'PENDING').length} request pending · ${att.length} kehadiran`}
+        actions={<Btn primary onClick={bulk}>Approve terpilih ({sel.length})</Btn>}
+      />
       <Err msg={err} />
-      <div className="flex gap-4 items-start mb-4">
-        {qr && <img src={qr} alt="QR presensi" className="w-32 h-32 bg-white p-1 rounded shadow" />}
-        <form onSubmit={saveLoc} className="bg-white p-4 rounded shadow grid md:grid-cols-4 gap-2 text-sm">
-          <input className="border p-2 rounded" placeholder="Latitude (kosong = mati)" value={loc.latitude} onChange={(e) => setLoc({ ...loc, latitude: e.target.value })} />
-          <input className="border p-2 rounded" placeholder="Longitude" value={loc.longitude} onChange={(e) => setLoc({ ...loc, longitude: e.target.value })} />
-          <input className="border p-2 rounded" placeholder="Radius meter" value={loc.radiusM} onChange={(e) => setLoc({ ...loc, radiusM: e.target.value })} />
-          <button className="bg-blue-600 text-white p-2 rounded">Simpan lokasi</button>
-        </form>
+      <div className="flex flex-wrap gap-4">
+        {qr && <Card className="p-3"><img src={qr} alt="QR presensi" className="h-32 w-32" /></Card>}
+        <Card className="min-w-72 flex-1 p-4">
+          <h2 className="mb-2 text-sm font-semibold">Batas Lokasi</h2>
+          <form onSubmit={saveLoc} className="grid gap-2 md:grid-cols-4">
+            <input className={field} placeholder="Latitude (kosong = mati)" value={loc.latitude} onChange={(e) => setLoc({ ...loc, latitude: e.target.value })} />
+            <input className={field} placeholder="Longitude" value={loc.longitude} onChange={(e) => setLoc({ ...loc, longitude: e.target.value })} />
+            <input className={field} placeholder="Radius meter" value={loc.radiusM} onChange={(e) => setLoc({ ...loc, radiusM: e.target.value })} />
+            <Btn primary>Simpan lokasi</Btn>
+          </form>
+        </Card>
       </div>
-      <h2 className="font-bold mt-4 mb-2">Request ({reqs.filter((r) => r.status === 'PENDING').length} pending)</h2>
-      <button className="bg-blue-600 text-white px-2 py-1 rounded text-sm mb-2" onClick={bulk}>Approve terpilih ({sel.length})</button>
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">✓</th><th>Nama</th><th>Alasan</th><th>Status</th><th>Aksi</th></tr></thead>
-        <tbody>
-          {reqs.map((r) => (
-            <tr key={r.id} className="border-b">
-              <td className="p-2">{r.status === 'PENDING' && <input type="checkbox" checked={sel.includes(r.id)} onChange={(e) => setSel(e.target.checked ? [...sel, r.id] : sel.filter((x) => x !== r.id))} />}</td>
-              <td className="p-2">{r.user?.name} ({r.user?.nim})</td>
-              <td>{r.reasonType} — {r.reasonDetail}</td>
-              <td>{r.status}</td>
-              <td>{r.status === 'PENDING' && (<><button className="text-green-700 mr-2" onClick={() => decide(r.id, 'approve')}>OK</button><button className="text-red-600" onClick={() => decide(r.id, 'reject')}>Tolak</button></>)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h2 className="font-bold mt-4 mb-2">Klaim koreksi ({kors.filter((r) => r.status === 'PENDING').length} pending)</h2>
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">Nama</th><th>Klaim</th><th>Status</th><th>Aksi</th></tr></thead>
-        <tbody>
-          {kors.map((r) => (
-            <tr key={r.id} className="border-b">
-              <td className="p-2">{r.user?.name}</td><td>{r.claim}</td><td>{r.status}</td>
-              <td>{r.status === 'PENDING' && (<><button className="text-green-700 mr-2" onClick={() => decideKor(r.id, 'approve')}>OK</button><button className="text-red-600" onClick={() => decideKor(r.id, 'reject')}>Tolak</button></>)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h2 className="font-bold mt-4 mb-2">Kehadiran ({att.length})</h2>
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">Nama</th><th>Status</th><th>Source</th></tr></thead>
-        <tbody>
-          {att.map((a) => (
-            <tr key={a.id} className="border-b"><td className="p-2">{a.user?.name}</td><td>{a.status}</td><td>{a.source}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <h2 className="font-bold mt-4 mb-2">Penyesuaian manual</h2>
-      <form onSubmit={adjust} className="bg-white p-4 rounded shadow grid md:grid-cols-4 gap-2 text-sm">
-        <input className="border p-2 rounded" placeholder="User ID" value={adj.userId} onChange={(e) => setAdj({ ...adj, userId: e.target.value })} required />
-        <select className="border p-2 rounded" value={adj.status} onChange={(e) => setAdj({ ...adj, status: e.target.value })}>
-          {['PRESENT', 'PERMITTED', 'SICK', 'DISPENSATION', 'ABSENT'].map((s) => <option key={s}>{s}</option>)}
-        </select>
-        <input className="border p-2 rounded" placeholder="Alasan (wajib)" value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} required minLength={3} />
-        <button className="bg-blue-600 text-white p-2 rounded">Sesuaikan</button>
-      </form>
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Request Izin ({pending} pending)</h2>
+        {reqs.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <Thead cols={['', 'Nama', 'Alasan', 'Status', 'Aksi']} />
+              <tbody>
+                {reqs.map((r) => (
+                  <tr key={r.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2">{r.status === 'PENDING' && <input type="checkbox" className="size-4 accent-[#134179]" checked={sel.includes(r.id)} onChange={(e) => setSel(e.target.checked ? [...sel, r.id] : sel.filter((x) => x !== r.id))} />}</td>
+                    <td className="py-2.5 pr-2 font-medium">{r.user?.name} <span className="font-normal text-gray-400">({r.user?.nim})</span></td>
+                    <td className="py-2.5 pr-2 text-gray-500">{r.reasonType} — {r.reasonDetail}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={r.status} /></td>
+                    <td className="py-2.5">{r.status === 'PENDING' && (<span className="flex gap-3"><button className="font-medium text-emerald-700 hover:text-emerald-900" onClick={() => decide(r.id, 'approve')}>OK</button><button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => decide(r.id, 'reject')}>Tolak</button></span>)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Klaim Koreksi ({kors.filter((r) => r.status === 'PENDING').length} pending)</h2>
+        {kors.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <Thead cols={['Nama', 'Klaim', 'Status', 'Aksi']} />
+              <tbody>
+                {kors.map((r) => (
+                  <tr key={r.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium">{r.user?.name}</td>
+                    <td className="py-2.5 pr-2 text-gray-500">{r.claim}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={r.status} /></td>
+                    <td className="py-2.5">{r.status === 'PENDING' && (<span className="flex gap-3"><button className="font-medium text-emerald-700 hover:text-emerald-900" onClick={() => decideKor(r.id, 'approve')}>OK</button><button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => decideKor(r.id, 'reject')}>Tolak</button></span>)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Kehadiran ({att.length})</h2>
+        {att.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm">
+              <Thead cols={['Nama', 'Status', 'Source']} />
+              <tbody>
+                {att.map((a) => (
+                  <tr key={a.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium">{a.user?.name}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={a.status} /></td>
+                    <td className="py-2.5 text-gray-500">{a.source}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Penyesuaian Manual</h2>
+        <form onSubmit={adjust} className="grid gap-2 md:grid-cols-4">
+          <input className={field} placeholder="User ID" value={adj.userId} onChange={(e) => setAdj({ ...adj, userId: e.target.value })} required />
+          <select className={field} value={adj.status} onChange={(e) => setAdj({ ...adj, status: e.target.value })}>
+            {['PRESENT', 'PERMITTED', 'SICK', 'DISPENSATION', 'ABSENT'].map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <input className={field} placeholder="Alasan (wajib)" value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} required minLength={3} />
+          <Btn primary>Sesuaikan</Btn>
+        </form>
+      </Card>
     </div>
   );
 }

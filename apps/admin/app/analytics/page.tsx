@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Empty, Err } from '@/lib/ui';
+import { Avatar, Card, Empty, Err, PageHeader, Thead } from '@/lib/ui';
 
 export default function Analytics() {
   const [trends, setTrends] = useState<any>({ data: [] });
@@ -22,41 +22,72 @@ export default function Analytics() {
       .catch((e) => setErr(e.message ?? 'Gagal memuat'));
   }, []);
 
-  if (err) return <div><h1 className="text-xl font-bold mb-4">Analitik</h1><Err msg={err} /></div>;
-  if (!trends.data?.length && !abs.length && !div.length) return <p>Memuat…</p>;
+  if (err) return <div><PageHeader title="Analitik" /><Err msg={err} /></div>;
+  if (!trends.data?.length && !abs.length && !div.length) return <p className="text-sm text-gray-500">Memuat…</p>;
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Analitik</h1>
-      <h2 className="font-bold mb-2">Tren bulanan {trends.truncated && '(terpotong)'}</h2>
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">Bulan</th><th>Total</th><th>Efektif</th><th>%</th></tr></thead>
-        <tbody>
-          {(trends.data ?? []).map((t: any) => (
-            <tr key={t.month} className="border-b"><td className="p-2">{t.month}</td><td>{t.total}</td><td>{t.effective}</td><td>{t.percentage ?? '–'}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <h2 className="font-bold mb-2">Sering alpha</h2>
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">Nama</th><th>Alpha</th></tr></thead>
-        <tbody>
-          {abs.map((a: any) => (
-            <tr key={a.user?.id} className="border-b"><td className="p-2">{a.user?.name} ({a.user?.nim})</td><td>{a.alphas}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <h2 className="font-bold mb-2">Per divisi</h2>
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">Divisi</th><th>Total</th><th>%</th></tr></thead>
-        <tbody>
-          {div.map((d: any) => (
-            <tr key={d.division} className="border-b"><td className="p-2">{d.division}</td><td>{d.total}</td><td>{d.percentage ?? '–'}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <h2 className="font-bold mb-2">Poin keaktifan</h2>
-      <Points />
+    <div className="space-y-4">
+      <PageHeader title="Analitik" sub={`Tren kehadiran 6 bulan terakhir${trends.truncated ? ' (terpotong)' : ''}`} />
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Tren Bulanan</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] text-sm">
+            <Thead cols={['Bulan', 'Total', 'Efektif', '%']} />
+            <tbody>
+              {(trends.data ?? []).map((t: any) => (
+                <tr key={t.month} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                  <td className="py-2.5 pr-2 font-medium">{t.month}</td>
+                  <td className="py-2.5 pr-2">{t.total}</td>
+                  <td className="py-2.5 pr-2">{t.effective}</td>
+                  <td className="py-2.5 font-semibold">{t.percentage ?? '–'}{t.percentage !== null && '%'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Sering Alpha</h2>
+          {abs.length === 0 ? <Empty /> : (
+            <ul className="divide-y divide-gray-50">
+              {abs.map((a: any) => (
+                <li key={a.user?.id} className="flex items-center gap-2.5 py-2">
+                  <Avatar name={a.user?.name ?? '?'} />
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block truncate font-medium">{a.user?.name}</span>
+                    <span className="block text-xs text-gray-400">{a.user?.nim} · {a.user?.division || '–'}</span>
+                  </span>
+                  <span className="text-sm font-bold text-rose-600">{a.alphas}×</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Per Divisi</h2>
+          {div.length === 0 ? <Empty /> : (
+            <ul className="space-y-3">
+              {div.map((d: any) => (
+                <li key={d.division}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="font-medium">{d.division}</span>
+                    <span className="text-gray-500">{d.percentage ?? '–'}{d.percentage !== null && '%'}</span>
+                  </div>
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className={`h-full rounded-full ${(d.percentage ?? 0) >= 85 ? 'bg-emerald-500' : (d.percentage ?? 0) >= 75 ? 'bg-amber-400' : 'bg-rose-400'}`}
+                      style={{ width: `${Math.min(100, d.percentage ?? 0)}%` }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <h2 className="mb-2 mt-5 text-sm font-semibold">Poin Keaktifan</h2>
+          <Points />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -66,14 +97,16 @@ function Points() {
   useEffect(() => {
     api<any[]>('points/leaderboard').then(setRows);
   }, []);
+  if (!rows.length) return <Empty />;
   return (
-    <table className="w-full bg-white rounded shadow text-sm">
-      <thead><tr className="text-left border-b"><th className="p-2">Nama</th><th>Poin</th></tr></thead>
-      <tbody>
-        {rows.map((r: any) => (
-          <tr key={r.user.id} className="border-b"><td className="p-2">{r.user.name}</td><td>{r.points}</td></tr>
-        ))}
-      </tbody>
-    </table>
+    <ul className="divide-y divide-gray-50">
+      {rows.map((r: any, i: number) => (
+        <li key={r.user.id} className="flex items-center gap-2.5 py-2">
+          <span className={`grid size-6 shrink-0 place-items-center rounded-lg text-xs font-bold ${i < 3 ? 'bg-gold-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>{i + 1}</span>
+          <span className="min-w-0 flex-1 truncate font-medium">{r.user.name}</span>
+          <span className="text-sm font-bold">{r.points}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

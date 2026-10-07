@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Empty, Err, Pager } from '@/lib/ui';
+import { Avatar, Btn, Card, Empty, Err, PageHeader, Pager, StatusPill, Thead, field } from '@/lib/ui';
 
 const LIMIT = 20;
 
@@ -64,37 +64,56 @@ export default function Members() {
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Anggota</h1>
+    <div className="space-y-4">
+      <PageHeader
+        title={`Anggota (${total})`}
+        sub="Kelola akun anggota, pengurus, dan admin"
+        actions={<label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Import CSV<input type="file" accept=".csv" className="hidden" onChange={csv} /></label>}
+      />
       <Err msg={err} />
-      <div className="flex gap-2 mb-2 text-sm">
-        <input className="border p-2 rounded" placeholder="Cari nama/NIM" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load(1)} />
-        <button className="bg-gray-200 px-2 rounded" onClick={() => load(1)}>Cari</button>
-        <label className="bg-gray-200 px-2 rounded cursor-pointer flex items-center">Import CSV<input type="file" accept=".csv" className="hidden" onChange={csv} /></label>
-      </div>
-      <form onSubmit={create} className="bg-white p-4 rounded shadow mb-4 grid md:grid-cols-5 gap-2 text-sm">
-        <input className="border p-2 rounded" placeholder="NIM" value={form.nim} onChange={(e) => setForm({ ...form, nim: e.target.value })} required />
-        <input className="border p-2 rounded" placeholder="Nama" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-        <input className="border p-2 rounded" type="password" placeholder="Password (min 10)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={10} />
-        <select className="border p-2 rounded" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-          <option>MEMBER</option><option>OFFICER</option><option>ADMIN</option>
-        </select>
-        <button className="bg-blue-600 text-white p-2 rounded">Tambah</button>
-      </form>
-      {rows.length === 0 ? <Empty /> : (
-        <table className="w-full bg-white rounded shadow text-sm">
-          <thead><tr className="text-left border-b"><th className="p-2">NIM</th><th>Nama</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>
-            {rows.map((u) => (
-              <tr key={u.id} className="border-b">
-                <td className="p-2">{u.nim}</td><td>{u.name}</td><td>{u.role}</td><td>{u.status}</td>
-                <td><button className="text-red-600" onClick={() => confirm(`${u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'} ${u.name}?`) && toggleActive(u)}>{u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <Pager page={page} total={total} limit={LIMIT} onPage={(p) => load(p)} />
+      <Card className="p-4">
+        <div className="flex flex-wrap gap-2">
+          <input className={`${field} w-full sm:w-64`} placeholder="Cari nama/NIM" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load(1)} />
+          <Btn onClick={() => load(1)}>Cari</Btn>
+        </div>
+        <form onSubmit={create} className="mt-3 grid gap-2 md:grid-cols-5">
+          <input className={field} placeholder="NIM" value={form.nim} onChange={(e) => setForm({ ...form, nim: e.target.value })} required />
+          <input className={field} placeholder="Nama" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <input className={field} type="password" placeholder="Password (min 10)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={10} />
+          <select className={field} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <option>MEMBER</option><option>OFFICER</option><option>ADMIN</option>
+          </select>
+          <Btn primary>Tambah</Btn>
+        </form>
+      </Card>
+      <Card className="p-4">
+        {rows.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <Thead cols={['Anggota', 'Role', 'Status', 'Aksi']} />
+              <tbody>
+                {rows.map((u) => (
+                  <tr key={u.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2">
+                      <span className="flex items-center gap-2.5">
+                        <Avatar name={u.name} />
+                        <span className="leading-tight">
+                          <span className="block font-medium">{u.name}</span>
+                          <span className="block text-xs text-gray-400">{u.nim}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-2"><StatusPill value={u.role} /></td>
+                    <td className="py-2.5 pr-2"><StatusPill value={u.status} /></td>
+                    <td className="py-2.5"><button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => confirm(`${u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'} ${u.name}?`) && toggleActive(u)}>{u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Pager page={page} total={total} limit={LIMIT} onPage={(p) => load(p)} />
+      </Card>
     </div>
   );
 }

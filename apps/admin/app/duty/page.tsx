@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { api } from '@/lib/client';
-import { Err } from '@/lib/ui';
+import { Btn, Card, Err, PageHeader, field } from '@/lib/ui';
 
 export default function Duty() {
   const [err, setErr] = useState('');
@@ -25,17 +25,19 @@ export default function Duty() {
   };
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Piket</h1>
+    <div className="space-y-4">
+      <PageHeader title="Piket" sub="Generate roster piket otomatis sebagai kegiatan DRAFT" />
       <Err msg={err} />
-      <form onSubmit={gen} className="bg-white p-4 rounded shadow mb-4 grid md:grid-cols-5 gap-2 text-sm">
-        <input type="date" className="border p-2 rounded" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
-        <input type="number" min={1} max={90} className="border p-2 rounded" placeholder="Hari" value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} />
-        <input type="number" min={1} max={5} className="border p-2 rounded" placeholder="Orang/hari" value={form.perDay} onChange={(e) => setForm({ ...form, perDay: e.target.value })} />
-        <input className="border p-2 rounded" placeholder="Divisi (kosong = semua)" value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })} />
-        <button className="bg-blue-600 text-white p-2 rounded">Generate roster</button>
-      </form>
-      <p className="text-sm text-gray-500">Roster menghasilkan kegiatan DRAFT — publish dari halaman Kegiatan. Presensi + rekap reuse alur biasa (rekap % mengecualikan piket).</p>
+      <Card className="p-4">
+        <form onSubmit={gen} className="grid gap-2 md:grid-cols-5">
+          <input type="date" className={field} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
+          <input type="number" min={1} max={90} className={field} placeholder="Hari" value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} />
+          <input type="number" min={1} max={5} className={field} placeholder="Orang/hari" value={form.perDay} onChange={(e) => setForm({ ...form, perDay: e.target.value })} />
+          <input className={field} placeholder="Divisi (kosong = semua)" value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })} />
+          <Btn primary>Generate roster</Btn>
+        </form>
+        <p className="mt-3 text-sm text-gray-500">Roster menghasilkan kegiatan DRAFT — publish dari halaman Kegiatan. Presensi + rekap reuse alur biasa (rekap % mengecualikan piket).</p>
+      </Card>
     </div>
   );
 }

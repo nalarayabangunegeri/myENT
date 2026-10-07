@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Empty, Err } from '@/lib/ui';
+import { Btn, Card, Empty, Err, PageHeader, StatusPill, Thead, field } from '@/lib/ui';
 
 export default function Assignments() {
   const [rows, setRows] = useState<any[]>([]);
@@ -45,41 +45,54 @@ export default function Assignments() {
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Tugas</h1>
+    <div className="space-y-4">
+      <PageHeader title="Tugas" sub="Buat tugas dan review submission" />
       <Err msg={err} />
-      <form onSubmit={create} className="bg-white p-4 rounded shadow mb-4 grid md:grid-cols-4 gap-2 text-sm">
-        <input className="border p-2 rounded" placeholder="Judul" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-        <input type="datetime-local" className="border p-2 rounded" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} required />
-        <input name="attachment" type="file" className="border p-2 rounded" />
-        <button className="bg-blue-600 text-white p-2 rounded">Buat</button>
-      </form>
-      {rows.length === 0 ? <Empty /> : (
-      <table className="w-full bg-white rounded shadow text-sm mb-4">
-        <thead><tr className="text-left border-b"><th className="p-2">Judul</th><th>Deadline</th><th>Terkumpul</th><th>Aksi</th></tr></thead>
-        <tbody>
-          {rows.map((a) => (
-            <tr key={a.id} className="border-b">
-              <td className="p-2">{a.title}</td><td>{new Date(a.deadline).toLocaleString('id-ID')}</td>
-              <td>{a._count?.submissions ?? ''}</td>
-              <td><button className="text-blue-600" onClick={() => show(a.id)}>Submission</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      )}
+      <Card className="p-4">
+        <form onSubmit={create} className="grid gap-2 md:grid-cols-4">
+          <input className={field} placeholder="Judul" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+          <input type="datetime-local" className={field} value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} required />
+          <input name="attachment" type="file" className={field} />
+          <Btn primary>Buat</Btn>
+        </form>
+      </Card>
+      <Card className="p-4">
+        {rows.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <Thead cols={['Judul', 'Deadline', 'Terkumpul', 'Aksi']} />
+              <tbody>
+                {rows.map((a) => (
+                  <tr key={a.id} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50/60 ${cur === a.id ? 'bg-brand-100/50' : ''}`}>
+                    <td className="py-2.5 pr-2 font-medium">{a.title}</td>
+                    <td className="py-2.5 pr-2 text-gray-500">{new Date(a.deadline).toLocaleString('id-ID')}</td>
+                    <td className="py-2.5 pr-2">{a._count?.submissions ?? ''}</td>
+                    <td className="py-2.5"><button className="font-medium text-brand-700 hover:text-brand-800" onClick={() => show(a.id)}>Submission</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
       {subs.length > 0 && (
-        <table className="w-full bg-white rounded shadow text-sm">
-          <thead><tr className="text-left border-b"><th className="p-2">Nama</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>
-            {subs.map((s) => (
-              <tr key={s.id} className="border-b">
-                <td className="p-2">{s.user?.name}</td><td>{s.status}</td>
-                <td>{!s.reviewedAt && <button className="text-green-700" onClick={async () => { const n = prompt('Catatan review', '') ?? ''; try { await api(`submissions/${s.id}/review`, { method: 'PATCH', body: JSON.stringify({ reviewNote: n }) }); show(cur); } catch (e: any) { setErr(e.message); } }}>Review</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Submission</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm">
+              <Thead cols={['Nama', 'Status', 'Aksi']} />
+              <tbody>
+                {subs.map((s) => (
+                  <tr key={s.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium">{s.user?.name}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={s.status} /></td>
+                    <td className="py-2.5">{!s.reviewedAt && <button className="font-medium text-emerald-700 hover:text-emerald-900" onClick={async () => { const n = prompt('Catatan review', '') ?? ''; try { await api(`submissions/${s.id}/review`, { method: 'PATCH', body: JSON.stringify({ reviewNote: n }) }); show(cur); } catch (e: any) { setErr(e.message); } }}>Review</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

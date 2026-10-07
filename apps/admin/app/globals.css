@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+@theme {
+  --color-canvas: #f2f3f9;
+  --color-brand-100: #e4ebf4;
+  --color-brand-200: #c2d3e5;
+  --color-brand-700: #134179;
+  --color-brand-800: #0d3059;
+  --color-gold-100: #fdf3cf;
+  --color-gold-400: #f4cb01;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background: var(--color-canvas);
+}

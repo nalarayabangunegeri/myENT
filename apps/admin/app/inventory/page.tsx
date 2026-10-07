@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Empty, Err } from '@/lib/ui';
+import { Btn, Card, Empty, Err, PageHeader, StatusPill, Thead, field } from '@/lib/ui';
 
 export default function Inventory() {
   const [items, setItems] = useState<any[]>([]);
@@ -51,73 +51,103 @@ export default function Inventory() {
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Inventaris</h1>
+    <div className="space-y-4">
+      <PageHeader title="Inventaris" sub="Kelola barang dan pinjaman" />
       <Err msg={err} />
-      <form onSubmit={add} className="bg-white p-4 rounded shadow mb-4 grid md:grid-cols-4 gap-2 text-sm">
-        <input className="border p-2 rounded" placeholder="Nama (Kamera A)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-        <input className="border p-2 rounded" placeholder="Kode (CAM-01)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
-        <input className="border p-2 rounded" placeholder="Kategori" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-        <button className="bg-blue-600 text-white p-2 rounded">Tambah</button>
-      </form>
-      {items.length === 0 ? <Empty /> : (
-        <table className="w-full bg-white rounded shadow text-sm mb-4">
-          <thead><tr className="text-left border-b"><th className="p-2">Kode</th><th>Nama</th><th>Kondisi</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id} className="border-b"><td className="p-2">{it.code}</td><td>{it.name}</td><td>{it.condition}</td><td>{it.status}</td><td><button className="text-blue-600" onClick={async () => { const r = await api<{ data: any[] }>(`items/${it.id}/history?limit=20`); setHist(r.data); }}>Riwayat</button></td></tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {hist.length > 0 && (
-        <table className="w-full bg-white rounded shadow text-sm mb-4">
-          <thead><tr className="text-left border-b"><th className="p-2">Waktu</th><th>Aksi</th><th>Sebelum</th><th>Sesudah</th><th>Catatan</th></tr></thead>
-          <tbody>
-            {hist.map((h: any) => (
-              <tr key={h.id} className="border-b"><td className="p-2">{new Date(h.createdAt).toLocaleString('id-ID')}</td><td>{h.action}</td><td>{h.oldValue}</td><td>{h.newValue}</td><td>{h.note}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <div className="flex gap-2 mb-2 text-sm">
-        <h2 className="font-bold">Pinjaman</h2>
-        <select className="border p-1 rounded" aria-label="Filter status pinjaman" value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="">Semua</option><option>ACTIVE</option><option>OVERDUE</option><option>RETURNED</option>
-        </select>
-      </div>
-      {ret && (
-        <form onSubmit={doReturn} className="bg-white p-4 rounded shadow my-2 grid md:grid-cols-4 gap-2 text-sm">
-          <span className="text-sm">{ret.damaged ? 'Tandai RUSAK' : 'Terima kembali'}</span>
-          <input name="photo" type="file" accept="image/*" className="border p-2 rounded" />
-          <input className="border p-2 rounded" placeholder="Catatan kondisi" value={ret.note} onChange={(e) => setRet({ ...ret, note: e.target.value })} />
-          <div className="flex gap-1">
-            <button className="bg-blue-600 text-white px-2 rounded">Kirim</button>
-            <button type="button" className="bg-gray-200 px-2 rounded" onClick={() => setRet(null)}>Batal</button>
-          </div>
+      <Card className="p-4">
+        <form onSubmit={add} className="grid gap-2 md:grid-cols-4">
+          <input className={field} placeholder="Nama (Kamera A)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <input className={field} placeholder="Kode (CAM-01)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+          <input className={field} placeholder="Kategori" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+          <Btn primary>Tambah</Btn>
         </form>
+      </Card>
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Barang</h2>
+        {items.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <Thead cols={['Kode', 'Nama', 'Kondisi', 'Status', '']} />
+              <tbody>
+                {items.map((it) => (
+                  <tr key={it.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium">{it.code}</td>
+                    <td className="py-2.5 pr-2">{it.name}</td>
+                    <td className="py-2.5 pr-2">{it.condition}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={it.status} /></td>
+                    <td className="py-2.5"><button className="font-medium text-brand-700 hover:text-brand-800" onClick={async () => { const r = await api<{ data: any[] }>(`items/${it.id}/history?limit=20`); setHist(r.data); }}>Riwayat</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      {hist.length > 0 && (
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Riwayat Barang</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <Thead cols={['Waktu', 'Aksi', 'Sebelum', 'Sesudah', 'Catatan']} />
+              <tbody>
+                {hist.map((h: any) => (
+                  <tr key={h.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 text-gray-500">{new Date(h.createdAt).toLocaleString('id-ID')}</td>
+                    <td className="py-2.5 pr-2 font-medium">{h.action}</td>
+                    <td className="py-2.5 pr-2">{h.oldValue}</td>
+                    <td className="py-2.5 pr-2">{h.newValue}</td>
+                    <td className="py-2.5">{h.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
-      {loans.length === 0 ? <Empty text="Belum ada pinjaman" /> : (
-        <table className="w-full bg-white rounded shadow text-sm">
-          <thead><tr className="text-left border-b"><th className="p-2">Barang</th><th>Peminjam</th><th>Tenggat</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>
-            {loans.map((l) => (
-              <tr key={l.id} className="border-b">
-                <td className="p-2">{l.item?.code}</td>
-                <td>{l.snapName} ({l.snapNim})</td>
-                <td>{new Date(l.dueAt).toLocaleDateString('id-ID')}</td>
-                <td>{l.status}</td>
-                <td className="flex gap-1">
-                  {['ACTIVE', 'OVERDUE'].includes(l.status) && (<>
-                    <button className="text-green-700" onClick={() => setRet({ id: l.id, damaged: false, note: '' })}>Terima</button>
-                    <button className="text-red-600" onClick={() => setRet({ id: l.id, damaged: true, note: '' })}>Rusak</button>
-                  </>)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <Card className="p-4">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">Pinjaman</h2>
+          <select className={field} aria-label="Filter status pinjaman" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">Semua</option><option>ACTIVE</option><option>OVERDUE</option><option>RETURNED</option>
+          </select>
+        </div>
+        {ret && (
+          <form onSubmit={doReturn} className="mb-3 grid gap-2 rounded-xl bg-gray-50 p-3 md:grid-cols-4">
+            <span className="flex items-center text-sm font-medium">{ret.damaged ? 'Tandai RUSAK' : 'Terima kembali'}</span>
+            <input name="photo" type="file" accept="image/*" className={field} />
+            <input className={field} placeholder="Catatan kondisi" value={ret.note} onChange={(e) => setRet({ ...ret, note: e.target.value })} />
+            <div className="flex gap-2">
+              <Btn primary>Kirim</Btn>
+              <Btn onClick={() => setRet(null)}>Batal</Btn>
+            </div>
+          </form>
+        )}
+        {loans.length === 0 ? <Empty text="Belum ada pinjaman" /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <Thead cols={['Barang', 'Peminjam', 'Tenggat', 'Status', 'Aksi']} />
+              <tbody>
+                {loans.map((l) => (
+                  <tr key={l.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium">{l.item?.code}</td>
+                    <td className="py-2.5 pr-2">{l.snapName} <span className="text-gray-400">({l.snapNim})</span></td>
+                    <td className="py-2.5 pr-2 text-gray-500">{new Date(l.dueAt).toLocaleDateString('id-ID')}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={l.status} /></td>
+                    <td className="py-2.5">
+                      {['ACTIVE', 'OVERDUE'].includes(l.status) && (
+                        <span className="flex gap-3">
+                          <button className="font-medium text-emerald-700 hover:text-emerald-900" onClick={() => setRet({ id: l.id, damaged: false, note: '' })}>Terima</button>
+                          <button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => setRet({ id: l.id, damaged: true, note: '' })}>Rusak</button>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

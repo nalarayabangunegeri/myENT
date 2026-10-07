@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Err } from '@/lib/ui';
+import { Btn, Card, Err, PageHeader, field } from '@/lib/ui';
 
 export default function Config() {
   const [cfg, setCfg] = useState<Record<string, any>>({});
@@ -35,22 +35,26 @@ export default function Config() {
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Konfigurasi</h1>
+    <div className="space-y-4">
+      <PageHeader title="Konfigurasi" sub="Pengaturan global aplikasi" />
       <Err msg={err} />
       {key === 'effective_statuses' && (
-        <p className="bg-yellow-100 border border-yellow-300 p-2 rounded text-sm mb-2">
+        <p className="rounded-xl border border-gold-400/60 bg-gold-100 p-3 text-sm text-gray-700">
           Perubahan status efektif berlaku pada seluruh histori rekap (PRD §15.8).
         </p>
       )}
-      <form onSubmit={save} className="bg-white p-4 rounded shadow mb-4 grid md:grid-cols-3 gap-2 text-sm">
-        <select className="border p-2 rounded" value={key} onChange={(e) => setKey(e.target.value)}>
-          {Object.keys(cfg).map((k) => <option key={k}>{k}</option>)}
-        </select>
-        <input className="border p-2 rounded" placeholder='Nilai (JSON, mis. 6 atau ["A"])' value={val} onChange={(e) => setVal(e.target.value)} required />
-        <button className="bg-blue-600 text-white p-2 rounded">Simpan</button>
-      </form>
-      <pre className="bg-white p-4 rounded shadow text-xs overflow-auto">{JSON.stringify(cfg, null, 2)}</pre>
+      <Card className="p-4">
+        <form onSubmit={save} className="grid gap-2 md:grid-cols-3">
+          <select className={field} value={key} onChange={(e) => setKey(e.target.value)}>
+            {Object.keys(cfg).map((k) => <option key={k}>{k}</option>)}
+          </select>
+          <input className={field} placeholder='Nilai (JSON, mis. 6 atau ["A"])' value={val} onChange={(e) => setVal(e.target.value)} required />
+          <Btn primary>Simpan</Btn>
+        </form>
+      </Card>
+      <Card className="p-4">
+        <pre className="overflow-auto text-xs text-gray-600">{JSON.stringify(cfg, null, 2)}</pre>
+      </Card>
     </div>
   );
 }

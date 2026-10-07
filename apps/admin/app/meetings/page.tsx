@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Empty, Err, Pager } from '@/lib/ui';
+import { Btn, Card, Empty, Err, PageHeader, Pager, StatusPill, Thead, field } from '@/lib/ui';
 
 const dt = (s: string) => new Date(s).toLocaleString('id-ID');
 const LIMIT = 20;
@@ -57,38 +57,46 @@ export default function Meetings() {
   }
 
   return (
-    <div>
-      <h1 className="text-xl font-bold mb-4">Kegiatan</h1>
+    <div className="space-y-4">
+      <PageHeader title={`Kegiatan (${total})`} sub="Buat, publish, dan kelola presensi kegiatan" />
       <Err msg={err} />
-      <form onSubmit={create} className="bg-white p-4 rounded shadow mb-4 grid md:grid-cols-3 gap-2">
-        <input className="border p-2 rounded" placeholder="Judul" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-        <label className="text-xs">Mulai <input type="datetime-local" className="border p-2 rounded w-full" value={form.startAt} onChange={(e) => setForm({ ...form, startAt: e.target.value })} required /></label>
-        <label className="text-xs">Selesai <input type="datetime-local" className="border p-2 rounded w-full" value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} required /></label>
-        <label className="text-xs">Presensi dibuka <input type="datetime-local" className="border p-2 rounded w-full" value={form.openAt} onChange={(e) => setForm({ ...form, openAt: e.target.value })} required /></label>
-        <label className="text-xs">Presensi ditutup <input type="datetime-local" className="border p-2 rounded w-full" value={form.closeAt} onChange={(e) => setForm({ ...form, closeAt: e.target.value })} required /></label>
-        <button className="bg-blue-600 text-white p-2 rounded">Buat DRAFT</button>
-      </form>
-      {rows.length === 0 ? <Empty /> : (
-        <table className="w-full bg-white rounded shadow text-sm">
-          <thead><tr className="text-left border-b"><th className="p-2">Judul</th><th>Mulai</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>
-            {rows.map((m) => (
-              <tr key={m.id} className="border-b">
-                <td className="p-2"><Link className="text-blue-600" href={`/meetings/${m.id}`}>{m.title}</Link></td>
-                <td>{dt(m.startAt)}</td>
-                <td>{m.status}</td>
-                <td className="flex gap-1 flex-wrap p-1">
-                  {m.status === 'DRAFT' && <button className="text-green-700" onClick={() => act(m.id, '', 'PATCH', { status: 'PUBLISHED' })}>Publish</button>}
-                  {m.status !== 'CANCELLED' && <button className="text-red-600" onClick={() => confirm('Batalkan?') && act(m.id, '', 'PATCH', { status: 'CANCELLED' })}>Batal</button>}
-                  <button className="text-gray-600" onClick={() => { const s = prompt('Mulai duplikat (YYYY-MM-DDTHH:mm)', m.startAt.slice(0, 16)); if (s) act(m.id, '/duplicate', 'POST', { startAt: new Date(s).toISOString() }); }}>Duplikat</button>
-                  <button className="text-red-400" onClick={() => confirm(`Hapus ${m.title}?`) && act(m.id, '', 'DELETE')}>Hapus</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <Pager page={page} total={total} limit={LIMIT} onPage={load} />
+      <Card className="p-4">
+        <form onSubmit={create} className="grid gap-2 md:grid-cols-3">
+          <input className={`${field} md:col-span-3`} placeholder="Judul kegiatan" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+          <label className="text-xs text-gray-500">Mulai <input type="datetime-local" className={`${field} mt-1 w-full`} value={form.startAt} onChange={(e) => setForm({ ...form, startAt: e.target.value })} required /></label>
+          <label className="text-xs text-gray-500">Selesai <input type="datetime-local" className={`${field} mt-1 w-full`} value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} required /></label>
+          <div className="flex items-end"><Btn primary>Buat DRAFT</Btn></div>
+          <label className="text-xs text-gray-500">Presensi dibuka <input type="datetime-local" className={`${field} mt-1 w-full`} value={form.openAt} onChange={(e) => setForm({ ...form, openAt: e.target.value })} required /></label>
+          <label className="text-xs text-gray-500">Presensi ditutup <input type="datetime-local" className={`${field} mt-1 w-full`} value={form.closeAt} onChange={(e) => setForm({ ...form, closeAt: e.target.value })} required /></label>
+        </form>
+      </Card>
+      <Card className="p-4">
+        {rows.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <Thead cols={['Judul', 'Mulai', 'Status', 'Aksi']} />
+              <tbody>
+                {rows.map((m) => (
+                  <tr key={m.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium"><Link className="text-brand-700 hover:text-brand-800" href={`/meetings/${m.id}`}>{m.title}</Link></td>
+                    <td className="py-2.5 pr-2 text-gray-500">{dt(m.startAt)}</td>
+                    <td className="py-2.5 pr-2"><StatusPill value={m.status} /></td>
+                    <td className="py-2.5">
+                      <span className="flex flex-wrap gap-x-3 gap-y-1">
+                        {m.status === 'DRAFT' && <button className="font-medium text-emerald-700 hover:text-emerald-900" onClick={() => act(m.id, '', 'PATCH', { status: 'PUBLISHED' })}>Publish</button>}
+                        {m.status !== 'CANCELLED' && <button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => confirm('Batalkan?') && act(m.id, '', 'PATCH', { status: 'CANCELLED' })}>Batal</button>}
+                        <button className="font-medium text-gray-500 hover:text-gray-700" onClick={() => { const s = prompt('Mulai duplikat (YYYY-MM-DDTHH:mm)', m.startAt.slice(0, 16)); if (s) act(m.id, '/duplicate', 'POST', { startAt: new Date(s).toISOString() }); }}>Duplikat</button>
+                        <button className="font-medium text-gray-400 hover:text-gray-600" onClick={() => confirm(`Hapus ${m.title}?`) && act(m.id, '', 'DELETE')}>Hapus</button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Pager page={page} total={total} limit={LIMIT} onPage={load} />
+      </Card>
     </div>
   );
 }

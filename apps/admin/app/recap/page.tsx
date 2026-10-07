@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, dl } from '@/lib/client';
-import { Empty, Err, Pager } from '@/lib/ui';
+import { Btn, Card, Empty, Err, PageHeader, Pager, Thead, field } from '@/lib/ui';
 
 const COLS = ['name', 'present', 'permitted', 'sick', 'dispensation', 'absent', 'percentage'];
 const LIMIT = 20;
@@ -51,38 +51,51 @@ export default function Recap() {
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-4">
-        <h1 className="text-xl font-bold">Rekap ({total})</h1>
-        <button className="bg-green-700 text-white px-2 py-1 rounded text-sm" onClick={exp}>Export XLSX</button>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title={`Rekap (${total})`}
+        sub="Rekap kehadiran per anggota"
+        actions={<Btn onClick={exp}>Export XLSX</Btn>}
+      />
       <Err msg={err} />
-      <div className="flex gap-2 mb-2 text-sm">
-        <input className="border p-2 rounded" placeholder="Cari nama/NIM" aria-label="Cari nama/NIM" value={q.search} onChange={(e) => setQ({ ...q, search: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && load()} />
-        <select className="border p-2 rounded" aria-label="Urut kolom" value={q.sortBy} onChange={(e) => setQ({ ...q, sortBy: e.target.value })}>
-          {COLS.map((c) => <option key={c}>{c}</option>)}
-        </select>
-        <select className="border p-2 rounded" aria-label="Urutan" value={q.order} onChange={(e) => setQ({ ...q, order: e.target.value })}>
-          <option>asc</option><option>desc</option>
-        </select>
-        <input className="border p-2 rounded" type="date" aria-label="Dari tanggal" value={q.from} onChange={(e) => setQ({ ...q, from: e.target.value })} />
-        <input className="border p-2 rounded" type="date" aria-label="Sampai tanggal" value={q.to} onChange={(e) => setQ({ ...q, to: e.target.value })} />
-        <button className="bg-gray-200 px-2 rounded disabled:opacity-50" disabled={busy} onClick={() => load(1)}>Terapkan</button>
-      </div>
-      {rows.length === 0 ? <Empty /> : (
-      <table className="w-full bg-white rounded shadow text-sm">
-        <thead><tr className="text-left border-b"><th className="p-2">Nama</th><th>NIM</th><th>Hadir</th><th>Izin</th><th>Sakit</th><th>Disp</th><th>Alpha</th><th>%</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.user.id} className="border-b">
-              <td className="p-2">{r.user.name}</td><td>{r.user.nim}</td><td>{r.present}</td><td>{r.permitted}</td>
-              <td>{r.sick}</td><td>{r.dispensation}</td><td>{r.absent}</td><td>{r.percentage ?? '–'}{r.percentage !== null && '%'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      )}
-      <Pager page={page} total={total} limit={LIMIT} onPage={load} />
+      <Card className="p-4">
+        <div className="flex flex-wrap gap-2">
+          <input className={`${field} w-full sm:w-56`} placeholder="Cari nama/NIM" aria-label="Cari nama/NIM" value={q.search} onChange={(e) => setQ({ ...q, search: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && load()} />
+          <select className={field} aria-label="Urut kolom" value={q.sortBy} onChange={(e) => setQ({ ...q, sortBy: e.target.value })}>
+            {COLS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <select className={field} aria-label="Urutan" value={q.order} onChange={(e) => setQ({ ...q, order: e.target.value })}>
+            <option>asc</option><option>desc</option>
+          </select>
+          <input className={field} type="date" aria-label="Dari tanggal" value={q.from} onChange={(e) => setQ({ ...q, from: e.target.value })} />
+          <input className={field} type="date" aria-label="Sampai tanggal" value={q.to} onChange={(e) => setQ({ ...q, to: e.target.value })} />
+          <Btn onClick={() => load(1)}>Terapkan</Btn>
+        </div>
+      </Card>
+      <Card className="p-4">
+        {rows.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <Thead cols={['Nama', 'NIM', 'Hadir', 'Izin', 'Sakit', 'Disp', 'Alpha', '%']} />
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.user.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
+                    <td className="py-2.5 pr-2 font-medium">{r.user.name}</td>
+                    <td className="py-2.5 pr-2 text-gray-500">{r.user.nim}</td>
+                    <td className="py-2.5 pr-2">{r.present}</td>
+                    <td className="py-2.5 pr-2">{r.permitted}</td>
+                    <td className="py-2.5 pr-2">{r.sick}</td>
+                    <td className="py-2.5 pr-2">{r.dispensation}</td>
+                    <td className="py-2.5 pr-2">{r.absent}</td>
+                    <td className="py-2.5 font-semibold">{r.percentage ?? '–'}{r.percentage !== null && '%'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Pager page={page} total={total} limit={LIMIT} onPage={load} />
+      </Card>
     </div>
   );
 }

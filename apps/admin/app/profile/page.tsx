@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { api } from '@/lib/client';
+import { Btn, Card, PageHeader, field } from '@/lib/ui';
 
 export default function Profile() {
   const [oldP, setOldP] = useState('');
@@ -34,58 +35,63 @@ export default function Profile() {
   }
 
   return (
-    <div className="max-w-md">
-      <h1 className="text-xl font-bold mb-4">Profil</h1>
-      {msg && <p className="text-sm mb-2">{msg}</p>}
-      <form onSubmit={ganti} className="bg-white p-4 rounded shadow grid gap-2 text-sm mb-4">
-        <input className="border p-2 rounded" type="password" placeholder="Password lama" value={oldP} onChange={(e) => setOldP(e.target.value)} required />
-        <input className="border p-2 rounded" type="password" placeholder="Password baru (min 10)" value={newP} onChange={(e) => setNewP(e.target.value)} required minLength={10} />
-        <button className="bg-blue-600 text-white p-2 rounded">Ganti password</button>
-      </form>
-      <button className="bg-red-600 text-white px-4 py-2 rounded text-sm" onClick={() => confirm('Keluar?') && keluar()}>Keluar</button>
-      <h2 className="text-lg font-bold mt-6 mb-2">2FA (aplikasi authenticator)</h2>
-      {!secret ? (
-        <form
-          className="bg-white p-4 rounded shadow grid gap-2 text-sm"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              const r = await api<{ secret: string; otpauthUrl: string }>('auth/2fa/setup', { method: 'POST', body: JSON.stringify({ password: setupPw }) });
-              setSecret(r.secret);
-              setOtpUrl(r.otpauthUrl);
-              setMsg('');
-            } catch (e: any) {
-              setMsg(e.message);
-            }
-          }}
-        >
-          <input className="border p-2 rounded" type="password" placeholder="Password saat ini" aria-label="Password saat ini" value={setupPw} onChange={(e) => setSetupPw(e.target.value)} required />
-          <button className="bg-gray-200 px-2 py-1 rounded text-sm">Mulai setup 2FA</button>
+    <div className="max-w-md space-y-4">
+      <PageHeader title="Profil" sub="Keamanan akunmu" />
+      {msg && <p role="status" className="rounded-xl bg-brand-100 px-3 py-2 text-sm text-brand-700">{msg}</p>}
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">Ganti Password</h2>
+        <form onSubmit={ganti} className="grid gap-2">
+          <input className={field} type="password" placeholder="Password lama" value={oldP} onChange={(e) => setOldP(e.target.value)} required />
+          <input className={field} type="password" placeholder="Password baru (min 10)" value={newP} onChange={(e) => setNewP(e.target.value)} required minLength={10} />
+          <Btn primary>Ganti password</Btn>
         </form>
-      ) : (
-        <div className="bg-white p-4 rounded shadow grid gap-2 text-sm">
-          <p className="break-all">Secret: {secret}</p>
-          <p className="break-all text-xs text-gray-500">{otpUrl}</p>
-          <p>Masukkan ke aplikasi authenticator, lalu verifikasi kode 6 digit:</p>
-          <input className="border p-2 rounded" placeholder="123456" aria-label="Kode 2FA" value={code} onChange={(e) => setCode(e.target.value)} />
-          <button
-            className="bg-blue-600 text-white p-2 rounded"
-            onClick={async () => {
+      </Card>
+      <Card className="p-4">
+        <h2 className="mb-2 text-sm font-semibold">2FA (aplikasi authenticator)</h2>
+        {!secret ? (
+          <form
+            className="grid gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
               try {
-                await api('auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) });
-                setMsg('2FA aktif.');
-                setSecret('');
-                setOtpUrl('');
-                setSetupPw('');
-              } catch {
-                setMsg('Kode salah.');
+                const r = await api<{ secret: string; otpauthUrl: string }>('auth/2fa/setup', { method: 'POST', body: JSON.stringify({ password: setupPw }) });
+                setSecret(r.secret);
+                setOtpUrl(r.otpauthUrl);
+                setMsg('');
+              } catch (e: any) {
+                setMsg(e.message);
               }
             }}
           >
-            Aktifkan
-          </button>
-        </div>
-      )}
+            <input className={field} type="password" placeholder="Password saat ini" aria-label="Password saat ini" value={setupPw} onChange={(e) => setSetupPw(e.target.value)} required />
+            <Btn>Mulai setup 2FA</Btn>
+          </form>
+        ) : (
+          <div className="grid gap-2">
+            <p className="break-all text-sm">Secret: <code className="rounded bg-gray-100 px-1">{secret}</code></p>
+            <p className="break-all text-xs text-gray-500">{otpUrl}</p>
+            <p className="text-sm text-gray-500">Masukkan ke aplikasi authenticator, lalu verifikasi kode 6 digit:</p>
+            <input className={field} placeholder="123456" aria-label="Kode 2FA" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} />
+            <Btn
+              primary
+              onClick={async () => {
+                try {
+                  await api('auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) });
+                  setMsg('2FA aktif.');
+                  setSecret('');
+                  setOtpUrl('');
+                  setSetupPw('');
+                } catch {
+                  setMsg('Kode salah.');
+                }
+              }}
+            >
+              Aktifkan
+            </Btn>
+          </div>
+        )}
+      </Card>
+      <button className="w-full rounded-xl bg-rose-600 py-2 text-sm font-medium text-white transition hover:bg-rose-700" onClick={() => confirm('Keluar?') && keluar()}>Keluar</button>
     </div>
   );
 }
