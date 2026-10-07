@@ -6,6 +6,7 @@ import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
+import { assertPdf, sanitizeImage } from '../storage/sanitize';
 import { semesterStart } from './semester';
 import { randomUUID } from 'crypto';
 
@@ -44,9 +45,16 @@ export class AbsenceService {
     const required = await this.config.get<Record<string, boolean>>('attachment_required');
     if (file?.length) {
       if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
-      if (!detectImage(file) && !isPdf(file)) throw new BadRequestException('Lampiran harus foto/PDF');
+      let mime: string;
+      if (detectImage(file)) {
+        file = await sanitizeImage(file);
+        mime = 'image/jpeg';
+      } else if (isPdf(file)) {
+        assertPdf(file);
+        mime = 'application/pdf';
+      } else throw new BadRequestException('Lampiran harus foto/PDF');
       attachmentObjectKey = `attachments/${meetingId}/${userId}/${randomUUID()}`;
-      await this.storage.save(attachmentObjectKey, file, isPdf(file) ? 'application/pdf' : 'image/jpeg');
+      await this.storage.save(attachmentObjectKey, file, mime);
     } else if (required[reasonType]) {
       throw new BadRequestException('Lampiran wajib untuk alasan ini');
     }
@@ -114,27 +122,37 @@ export class AbsenceService {
           where: { userId_meetingId: { userId: r.userId, meetingId: r.meetingId } },
         });
         if (existing?.status === 'PRESENT') throw new ConflictException('Sudah PRESENT'); // BR-15
-        await tx.absenceRequest.update({
-          where: { id }, data: { status: 'APPROVED', reviewerId, reviewNote: reviewNote ?? '', reviewedAt: now },
+        // Conditional update: dua officer konkuren → hanya satu yang dapat count 1.
+        const claimed = await tx.absenceRequest.updateMany({
+          where: { id, status: 'PENDING' },
+          data: { status: 'APPROVED', reviewerId, reviewNote: reviewNote ?? '', reviewedAt: now },
         });
+        if (!claimed.count) throw new BadRequestException('Sudah diputuskan');
         if (existing) {
           await tx.attendance.update({
             where: { id: existing.id },
             data: { status, source: 'ABSENCE_APPROVAL', adjustedAt: now, adjustmentReason: `Approval: ${reviewNote ?? ''}` },
           });
         } else {
-          await tx.attendance.create({
-            data: { userId: r.userId, meetingId: r.meetingId, status, source: 'ABSENCE_APPROVAL', submittedAt: now },
-          });
+          try {
+            await tx.attendance.create({
+              data: { userId: r.userId, meetingId: r.meetingId, status, source: 'ABSENCE_APPROVAL', submittedAt: now },
+            });
+          } catch (e: any) {
+            if (e?.code === 'P2002') throw new ConflictException('Sudah presensi');
+            throw e;
+          }
         }
         await this.audit.log(
           { actorId: reviewerId, action: 'absence.approve', entity: 'AbsenceRequest', entityId: id, oldValue: { status: 'PENDING' } as any, newValue: { status } as any },
           tx,
         );
       } else {
-        await tx.absenceRequest.update({
-          where: { id }, data: { status: 'REJECTED', reviewerId, reviewNote: reviewNote ?? '', reviewedAt: now },
+        const claimed = await tx.absenceRequest.updateMany({
+          where: { id, status: 'PENDING' },
+          data: { status: 'REJECTED', reviewerId, reviewNote: reviewNote ?? '', reviewedAt: now },
         });
+        if (!claimed.count) throw new BadRequestException('Sudah diputuskan');
         await this.audit.log(
           { actorId: reviewerId, action: 'absence.reject', entity: 'AbsenceRequest', entityId: id, oldValue: { status: 'PENDING' } as any, newValue: { status: 'REJECTED' } as any },
           tx,

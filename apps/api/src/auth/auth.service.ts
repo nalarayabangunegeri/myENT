@@ -101,6 +101,20 @@ export class AuthService {
     return { ok: true };
   }
 
+  // Consent privasi selfie (PRD §17): sekali, tercatat waktu pertama, tak bisa di-reset client.
+  async consentPrivacy(userId: string) {
+    const now = new Date();
+    await this.prisma.user.updateMany({
+      where: { id: userId, privacyConsentedAt: null },
+      data: { privacyConsentedAt: now },
+    });
+    const u = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { privacyConsentedAt: true },
+    });
+    return { ok: true, consentedAt: u.privacyConsentedAt };
+  }
+
   async changePassword(userId: string, oldPassword: string, newPassword: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
@@ -149,6 +163,8 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { nim } });
     if (user && user.status === 'ACTIVE' && user.email) {
       const raw = randomBytes(32).toString('hex');
+      // Satu token aktif per user: cabut yang belum terpakai sebelum buat baru.
+      await this.prisma.passwordReset.deleteMany({ where: { userId: user.id, usedAt: null } });
       await this.prisma.passwordReset.create({
         data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 3600_000) },
       });
@@ -166,9 +182,14 @@ export class AuthService {
     if (!rec || rec.usedAt || rec.expiresAt < new Date()) throw new UnauthorizedException('Tautan tidak valid');
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.$transaction(async (tx: any) => {
+      // Atomic consume: dua request konkuren → hanya satu yang dapat count 1.
+      const claimed = await tx.passwordReset.updateMany({
+        where: { id: rec.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (!claimed.count) throw new UnauthorizedException('Tautan tidak valid');
       await tx.user.update({ where: { id: rec.userId }, data: { passwordHash, mustChangePassword: false } });
       await tx.session.updateMany({ where: { userId: rec.userId }, data: { revokedAt: new Date() } });
-      await tx.passwordReset.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
       await this.audit.log(
         { actorId: rec.userId, action: 'user.reset-via-email', entity: 'User', entityId: rec.userId },
         tx,

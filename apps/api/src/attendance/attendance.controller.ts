@@ -6,6 +6,7 @@ import { IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLe
 import { toXlsx } from '../common/xlsx';
 import { recapPdf } from '../common/recap-pdf';
 import { verifyQr } from '../meetings/qr.rules';
+import { requireJwtSecret } from '../common/jwt-secret';
 import { AttendanceService } from './attendance.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
@@ -66,7 +67,7 @@ export class AttendanceController {
     @Body() body: QrDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (!verifyQr(body.token, id, process.env.JWT_SECRET ?? 'dev'))
+    if (!verifyQr(body.token, id, requireJwtSecret()))
       throw new BadRequestException('QR tidak valid/kedaluwarsa');
     return this.attendance.createSelf(req.user.id, id, file?.buffer ?? Buffer.alloc(0), body);
   }

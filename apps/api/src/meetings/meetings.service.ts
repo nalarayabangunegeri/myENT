@@ -6,6 +6,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RetentionService } from '../retention/retention.service';
 import { LoanService } from '../loans/loan.service';
 import { assertManualCancel, assertWindow, duplicateTimes } from './meeting.rules';
+import { requireJwtSecret } from '../common/jwt-secret';
 
 // 1 hari dalam ms. Ditulis eksplisit — pernah typo separator menjadi 10 hari.
 export const DAY_MS = 86400_000;
@@ -149,7 +150,9 @@ export class MeetingsService {
 
   async remove(actorId: string, id: string) {    const m = await this.prisma.meeting.findFirst({ where: { id, deletedAt: null } });
     if (!m) throw new NotFoundException('Meeting tidak ditemukan');
-    // ponytail: guard "sudah ada attendance" menyusul M2 (model belum ada). Soft delete tetap.
+    const attCount = await this.prisma.attendance.count({ where: { meetingId: id } });
+    if (attCount > 0)
+      throw new ForbiddenException('Meeting sudah memiliki attendance — batalkan via status CANCELLED, bukan delete');
     const updated = await this.prisma.meeting.update({ where: { id }, data: { deletedAt: new Date() } });
     await this.audit.log({ actorId, action: 'meeting.delete', entity: 'Meeting', entityId: id });
     return { ok: true, deletedAt: updated.deletedAt };
@@ -162,11 +165,15 @@ export class MeetingsService {
     const exp = Date.now() + 5 * 60_1000;
     const { signQr } = await import('./qr.rules');
     const QRCode = (await import('qrcode')).default;
-    const token = signQr(id, exp, process.env.JWT_SECRET ?? 'dev');
+    const token = signQr(id, exp, requireJwtSecret());
     return { qr: await QRCode.toDataURL(token), expiresAt: new Date(exp) };
   }
 
   // Cegah tick ganda multi-instance via advisory lock (AGENTS §12).
+  // Session-level lock di pool = tidak andal (lock/unlock bisa beda koneksi),
+  // jadi dipertahankan hanya sebagai wrapper deprecated. Lock yang benar ada
+  // di tick() via pg_try_advisory_xact_lock dalam transaksi yang sama.
+  /** @deprecated pakai tick() yang self-locking */
   async tryTickLock(): Promise<boolean> {
     const r = (await this.prisma.$queryRawUnsafe(
       `SELECT pg_try_advisory_lock(hashtext('meeting-tick')) AS ok`,
@@ -179,8 +186,14 @@ export class MeetingsService {
   }
 
   // Satu tick transisi otomatis; idempotent via WHERE (AGENTS §12).
+  // Transaction-level lock: terkunci + terlepas otomatis bersama transaksi,
+  // aman dipakai dari connection pool. Instance yang kalah → { skipped: true }.
   async tick(now = new Date()) {
     const r = await this.prisma.$transaction(async (tx: any) => {
+      const lock = (await tx.$queryRawUnsafe(
+        `SELECT pg_try_advisory_xact_lock(hashtext('meeting-tick')) AS ok`,
+      ).catch(() => [{ ok: false }])) as any[];
+      if (!lock[0]?.ok) return null;
       const toOngoing = await tx.meeting.updateMany({
         where: { status: 'PUBLISHED', startAt: { lte: now }, deletedAt: null },
         data: { status: 'ONGOING' },
@@ -191,6 +204,7 @@ export class MeetingsService {
       });
       return { toOngoing: toOngoing.count, toCompleted: toCompleted.count };
     });
+    if (!r) return { skipped: true as const, toOngoing: 0, toCompleted: 0, finalized: 0 };
     const finalized = await this.finalizeDue(now);
     await this.sendReminders(now);
     return { ...r, finalized };
@@ -298,6 +312,7 @@ export class MeetingsService {
 @Injectable()
 export class MeetingJob implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
+  private running = false;
   constructor(
     private meetings: MeetingsService,
     private retention: RetentionService,
@@ -308,13 +323,17 @@ export class MeetingJob implements OnModuleInit, OnModuleDestroy {
     this.timer = setInterval(
       () =>
         (async () => {
-          if (!(await this.meetings.tryTickLock())) return;
+          // Guard in-process: interval berikut dilewati bila tick sebelumnya belum selesai.
+          // Cross-instance dijaga xact lock di tick() (AGENTS §12).
+          if (this.running) return;
+          this.running = true;
           try {
-            await this.meetings.tick();
+            const r = await this.meetings.tick();
+            if ((r as any).skipped) return;
             await this.retention.tick();
             await this.loans.overdueTick();
           } finally {
-            await this.meetings.unlockTick();
+            this.running = false;
           }
         })().catch((e) => console.error('[meeting-tick]', e)),
       ms,

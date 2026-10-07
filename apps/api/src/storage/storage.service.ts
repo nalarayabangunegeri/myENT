@@ -4,13 +4,12 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { mkdir, writeFile, readFile, unlink } from 'fs/promises';
 import { dirname, join } from 'path';
+import { requireJwtSecret } from '../common/jwt-secret';
 
 // ponytail: driver local untuk dev/smoke tanpa R2; R2 S3-compatible untuk prod (PRD §10).
 // STORAGE_DRIVER=local| r2. Upgrade path: hapus driver local saat semua env punya R2.
 function fileSecret(): string {
-  const s = process.env.JWT_SECRET ?? '';
-  if (!s && process.env.NODE_ENV === 'production') throw new Error('JWT_SECRET wajib untuk signed URL');
-  return s || 'dev';
+  return requireJwtSecret();
 }
 
 @Injectable()
