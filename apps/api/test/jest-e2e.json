@@ -3,8 +3,9 @@
   "rootDir": "..",
   "testRegex": "test/.+\\.e2e-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "tsconfig.json" }]
+    "^.+\\.(t|j)s$": ["<rootDir>/jest-transformer.cjs"]
   },
+  "transformIgnorePatterns": ["/node_modules/(?!.*@nestjs)"],
   "testEnvironment": "node",
   "testTimeout": 60000
 }

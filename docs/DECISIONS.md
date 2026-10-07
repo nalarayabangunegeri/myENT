@@ -146,3 +146,9 @@
 - Infra: compose healthcheck berurutan + restart + log 10m×3; Caddy header+log; backup via `exec -T`
   + prune 7 hari; rollback pre-backup; entrypoint single-replika.
 - CI: pin bun 1.3.12, `prisma validate` + `api lint`, job `image` build Dockerfile prod.
+
+## Toolchain upgrade bertahap (Phase 3)
+- TS 5.6→6: butuh `declare module '*.css'` (admin) + `rootDir` eksplisit di `tsconfig.build.json`.
+- Nest 11→12 (ESM-only): unit/e2e butuh Node ≥24 + `jest-transformer.cjs` (paksa CJS +
+  `import.meta`→`__filename`/`__dirname` untuk 1 file `load-package.util.js`). Node lokal: `~/.local/node24`.
+- Next 15→16 + React 19.3: tanpa perubahan kode.

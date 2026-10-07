@@ -1,9 +1,18 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": "src",
   "testRegex": ".*\\.spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "tsconfig.json" }]
+    "^.+\\.[tj]s$": [
+      "<rootDir>/../jest-transformer.cjs"
+    ]
   },
-  "testEnvironment": "node"
+  "testEnvironment": "node",
+  "transformIgnorePatterns": [
+    "/node_modules/(?!.*@nestjs)"
+  ]
 }
