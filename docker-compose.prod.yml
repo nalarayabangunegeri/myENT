@@ -32,6 +32,12 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-jurnalistik}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-jurnalistik}?schema=public
       JWT_SECRET: ${JWT_SECRET:?isi JWT_SECRET min 32 karakter}
+      WEB_URL: ${WEB_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       UPLOAD_DIR: /srv/uploads
       STORAGE_DRIVER: ${STORAGE_DRIVER:-r2}
       R2_ENDPOINT: ${R2_ENDPOINT:-}
@@ -58,11 +64,14 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:?isi site key Turnstile (Cloudflare dashboard)}
     restart: unless-stopped
     logging: *log
     environment:
       API_URL: http://api:3000
       ALLOWED_ORIGINS: ${ADMIN_URL:?isi ADMIN_URL, mis. https://admin.contoh.id}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?isi secret key Turnstile (Cloudflare dashboard)}
     depends_on:
       api:
         condition: service_healthy
@@ -79,6 +88,9 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     logging: *log
+    environment:
+      API_URL: ${API_URL:?isi API_URL, mis. https://api.contoh.id}
+      ADMIN_URL: ${ADMIN_URL:?isi ADMIN_URL, mis. https://admin.contoh.id}
     ports:
       - "80:80"
       - "443:443"
