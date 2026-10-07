@@ -185,14 +185,19 @@ export class MeetingsService {
     await this.prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(hashtext('meeting-tick'))`).catch(() => {});
   }
 
-  // Satu tick transisi otomatis; idempotent via WHERE (AGENTS §12).
-  // Transaction-level lock: terkunci + terlepas otomatis bersama transaksi,
-  // aman dipakai dari connection pool. Instance yang kalah → { skipped: true }.
+  // Satu tick transisi + finalisasi + reminder; idempotent via WHERE (AGENTS §12).
+  // Transaction-level lock mencakup SEMUA langkah (KURANG.md §1): instance yang
+  // kalah → { skipped: true } sebelum menyentuh apa pun. Broadcast keluar setelah commit.
   async tick(now = new Date()) {
+    const mapping = await this.config.get<Record<string, string>>('approval_mapping');
+    const notify: { type: string; title: string }[] = [];
     const r = await this.prisma.$transaction(async (tx: any) => {
-      const lock = (await tx.$queryRawUnsafe(
+      const lock = await tx.$queryRawUnsafe(
         `SELECT pg_try_advisory_xact_lock(hashtext('meeting-tick')) AS ok`,
-      ).catch(() => [{ ok: false }])) as any[];
+      ).catch((e: any) => {
+        console.error('[tick-lock-query-error]', e?.message ?? e);
+        return [{ ok: false }];
+      });
       if (!lock[0]?.ok) return null;
       const toOngoing = await tx.meeting.updateMany({
         where: { status: 'PUBLISHED', startAt: { lte: now }, deletedAt: null },
@@ -202,54 +207,17 @@ export class MeetingsService {
         where: { status: 'ONGOING', endAt: { lte: now }, deletedAt: null },
         data: { status: 'COMPLETED' },
       });
-      return { toOngoing: toOngoing.count, toCompleted: toCompleted.count };
-    });
-    if (!r) return { skipped: true as const, toOngoing: 0, toCompleted: 0, finalized: 0 };
-    const finalized = await this.finalizeDue(now);
-    await this.sendReminders(now);
-    return { ...r, finalized };
-  }
-
-  // Reminder presensi dibuka / hampir ditutup (PRD §15.4); sekali per meeting via flag.
-  async sendReminders(now = new Date()) {
-    const open = await this.prisma.meeting.findMany({
-      where: {
-        status: { in: ['PUBLISHED', 'ONGOING'] }, deletedAt: null, notifOpenedSentAt: null,
-        attendanceOpenAt: { lte: now }, attendanceCloseAt: { gte: now },
-      },
-      select: { id: true, title: true },
-    });
-    for (const m of open) {
-      await this.notif.broadcast(undefined, 'attendance-opened', `Presensi dibuka: ${m.title}`, '').catch(() => {});
-      await this.prisma.meeting.update({ where: { id: m.id }, data: { notifOpenedSentAt: now } });
-    }
-    const closingAt = new Date(now.getTime() + 30 * 60_1000);
-    const closing = await this.prisma.meeting.findMany({
-      where: {
-        status: { in: ['PUBLISHED', 'ONGOING'] }, deletedAt: null, notifClosingSentAt: null,
-        attendanceCloseAt: { gte: now, lte: closingAt },
-      },
-      select: { id: true, title: true },
-    });
-    for (const m of closing) {
-      await this.notif.broadcast(undefined, 'attendance-closing', `Presensi hampir ditutup: ${m.title}`, '').catch(() => {});
-      await this.prisma.meeting.update({ where: { id: m.id }, data: { notifClosingSentAt: now } });
-    }
-  }
-
-  // Auto Alpha PRD §12: per meeting satu transaksi; idempotent via skipDuplicates + finalizedAt.
-  async finalizeDue(now = new Date()) {
-    const mapping = await this.config.get<Record<string, string>>('approval_mapping');
-    const due = await this.prisma.meeting.findMany({
-      where: {
-        attendanceCloseAt: { lte: now }, finalizedAt: null, deletedAt: null,
-        status: { in: ['PUBLISHED', 'ONGOING', 'COMPLETED'] },
-      },
-      select: { id: true, startAt: true, recurrence: true, recurrenceCount: true, recurrenceParentId: true },
-    });
-    let finalized = 0;
-    for (const m of due) {
-      await this.prisma.$transaction(async (tx: any) => {
+      // Auto Alpha PRD §12: klaim per meeting via updateMany conditional —
+      // instance kedua dapat count 0 → lewati (tanpa attendance ganda via unique + skipDuplicates).
+      const due = await tx.meeting.findMany({
+        where: {
+          attendanceCloseAt: { lte: now }, finalizedAt: null, deletedAt: null,
+          status: { in: ['PUBLISHED', 'ONGOING', 'COMPLETED'] },
+        },
+        select: { id: true, startAt: true, recurrence: true, recurrenceCount: true, recurrenceParentId: true },
+      });
+      let finalized = 0;
+      for (const m of due) {
         const eligible = await tx.user.findMany({
           where: {
             status: 'ACTIVE', joinedAt: { lte: m.startAt },
@@ -257,52 +225,86 @@ export class MeetingsService {
           },
           select: { id: true },
         });
-        if (!eligible.length) {
-          await tx.meeting.updateMany({ where: { id: m.id, finalizedAt: null }, data: { finalizedAt: now } });
-          return;
+        if (eligible.length) {
+          const approved = await tx.absenceRequest.findMany({
+            where: { meetingId: m.id, status: 'APPROVED', userId: { in: eligible.map((u: any) => u.id) } },
+            select: { userId: true, reasonType: true },
+          });
+          const map = new Map(approved.map((x: any) => [x.userId, (mapping as Record<string, string>)[x.reasonType]]));
+          await tx.attendance.createMany({
+            data: eligible.map((u: any) => ({
+              userId: u.id, meetingId: m.id,
+              status: map.get(u.id) ?? 'ABSENT',
+              source: map.has(u.id) ? 'ABSENCE_APPROVAL' : 'AUTO_ALPHA',
+              submittedAt: now,
+            })),
+            skipDuplicates: true,
+          });
         }
-        const approved = await tx.absenceRequest.findMany({
-          where: { meetingId: m.id, status: 'APPROVED', userId: { in: eligible.map((u: any) => u.id) } },
-          select: { userId: true, reasonType: true },
-        });
-        const map = new Map(approved.map((r: any) => [r.userId, (mapping as Record<string, string>)[r.reasonType]]));
-        await tx.attendance.createMany({
-          data: eligible.map((u: any) => ({
-            userId: u.id, meetingId: m.id,
-            status: map.get(u.id) ?? 'ABSENT',
-            source: map.has(u.id) ? 'ABSENCE_APPROVAL' : 'AUTO_ALPHA',
-            submittedAt: now,
-          })),
-          skipDuplicates: true,
-        });
-        await tx.meeting.updateMany({ where: { id: m.id, finalizedAt: null }, data: { finalizedAt: now } });
+        const fin = await tx.meeting.updateMany({ where: { id: m.id, finalizedAt: null }, data: { finalizedAt: now } });
+        if (fin.count) {
+          finalized++;
+          await this.spawnRecurrenceTx(tx, m).catch((e: any) => {
+            if (e?.code !== 'P2002') throw e; // anak kembar dari instance lain → abaikan.
+          });
+        }
+      }
+      // Reminder (PRD §15.4): klaim flag conditional, kirim setelah commit.
+      const open = await tx.meeting.findMany({
+        where: {
+          status: { in: ['PUBLISHED', 'ONGOING'] }, deletedAt: null, notifOpenedSentAt: null,
+          attendanceOpenAt: { lte: now }, attendanceCloseAt: { gte: now },
+        },
+        select: { id: true, title: true },
       });
-      await this.spawnRecurrence(m);
-      finalized++;
-    }
-    return finalized;
+      for (const m of open) {
+        const claimed = await tx.meeting.updateMany({
+          where: { id: m.id, notifOpenedSentAt: null }, data: { notifOpenedSentAt: now },
+        });
+        if (claimed.count) notify.push({ type: 'attendance-opened', title: m.title });
+      }
+      const closingAt = new Date(now.getTime() + 30 * 60_1000);
+      const closing = await tx.meeting.findMany({
+        where: {
+          status: { in: ['PUBLISHED', 'ONGOING'] }, deletedAt: null, notifClosingSentAt: null,
+          attendanceCloseAt: { gte: now, lte: closingAt },
+        },
+        select: { id: true, title: true },
+      });
+      for (const m of closing) {
+        const claimed = await tx.meeting.updateMany({
+          where: { id: m.id, notifClosingSentAt: null }, data: { notifClosingSentAt: now },
+        });
+        if (claimed.count) notify.push({ type: 'attendance-closing', title: m.title });
+      }
+      return { toOngoing: toOngoing.count, toCompleted: toCompleted.count, finalized };
+    }, { timeout: 30_000 });
+    if (!r) return { skipped: true as const, toOngoing: 0, toCompleted: 0, finalized: 0 };
+    for (const n of notify)
+      await this.notif.broadcast(undefined, n.type, `${n.type === 'attendance-opened' ? 'Presensi dibuka' : 'Presensi hampir ditutup'}: ${n.title}`, '').catch(() => {});
+    return { ...r };
   }
 
-  // Backlog recurring (§22.3): seri WEEKLY sederhana — anak selalu DRAFT untuk direview.
-  // Backlog recurring (§22.3): seri mingguan/2-mingguan — anak selalu DRAFT untuk direview.
-  async spawnRecurrence(m: { id: string; recurrence: string; recurrenceCount: number; recurrenceParentId: string | null }) {
+  // Backlog recurring (§22.3): anak selalu DRAFT untuk direview; unik per (parent, startAt)
+  // sehingga dua instance tak bisa membuat anak kembar (KURANG.md §1).
+  private async spawnRecurrenceTx(tx: any, m: { id: string; recurrence: string; recurrenceCount: number; recurrenceParentId: string | null }) {
     if ((m.recurrence !== 'WEEKLY' && m.recurrence !== 'BIWEEKLY') || m.recurrenceCount < 2) return;
     const rootId = m.recurrenceParentId ?? m.id;
-    const series = await this.prisma.meeting.findMany({
+    const series = await tx.meeting.findMany({
       where: { OR: [{ id: rootId }, { recurrenceParentId: rootId }], deletedAt: null },
       select: { id: true, startAt: true },
       orderBy: { startAt: 'desc' },
     });
     if (series.length >= m.recurrenceCount) return;
-    const src = await this.prisma.meeting.findUniqueOrThrow({ where: { id: series[0].id } });
+    const src = await tx.meeting.findUniqueOrThrow({ where: { id: series[0].id } });
     const next = new Date(src.startAt.getTime() + (src.recurrence === 'BIWEEKLY' ? 14 : 7) * DAY_MS);
     const times = duplicateTimes(src, next);
-    await this.prisma.meeting.create({
+    await tx.meeting.create({
       data: {
         title: src.title, description: src.description, ...times,
         status: 'DRAFT', createdBy: src.createdBy,
         latitude: src.latitude, longitude: src.longitude, radiusM: src.radiusM,
-        recurrence: 'WEEKLY', recurrenceCount: m.recurrenceCount, recurrenceParentId: rootId,
+        recurrence: src.recurrence, recurrenceCount: m.recurrenceCount, recurrenceParentId: rootId,
       },
     });
   }
@@ -319,7 +321,9 @@ export class MeetingJob implements OnModuleInit, OnModuleDestroy {
     private loans: LoanService,
   ) {}
   onModuleInit() {
-    const ms = Number(process.env.MEETING_TICK_MS ?? 60_000);
+    // Interval tak valid (NaN/negatif/kecil) → default aman, jangan storm tick.
+    let ms = Number(process.env.MEETING_TICK_MS ?? 60_000);
+    if (!Number.isFinite(ms) || ms < 1000) ms = 60_000;
     this.timer = setInterval(
       () =>
         (async () => {

@@ -68,10 +68,12 @@ export class AuthService {
     }
     if (user.failedLogins > 0 || user.lockedUntil)
       await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
-    // 2FA aktif → langkah kedua via token sekali-pakai 5 menit.
+    // 2FA aktif → challenge one-time 5 menit (KURANG.md §4). pendingToken = id challenge (opaque).
     if (user.totpEnabled && user.totpSecret) {
-      const pendingToken = await this.jwt.signAsync({ sub: user.id, purpose: '2fa' }, { expiresIn: '5m' } as any);
-      return { twoFactorRequired: true, pendingToken };
+      const c = await this.prisma.twoFaChallenge.create({
+        data: { userId: user.id, expiresAt: new Date(Date.now() + 5 * 60_1000) },
+      });
+      return { twoFactorRequired: true, pendingToken: c.id };
     }
     return this.issueTokens(user.id);
   }
@@ -162,17 +164,21 @@ export class AuthService {
   async forgotPassword(nim: string) {
     const user = await this.prisma.user.findUnique({ where: { nim } });
     if (user && user.status === 'ACTIVE' && user.email) {
-      const raw = randomBytes(32).toString('hex');
-      // Satu token aktif per user: cabut yang belum terpakai sebelum buat baru.
-      await this.prisma.passwordReset.deleteMany({ where: { userId: user.id, usedAt: null } });
-      await this.prisma.passwordReset.create({
-        data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 3600_000) },
+      await this.prisma.$transaction(async (tx: any) => {
+        // Kunci baris user: dua request konkuren jalan berurutan — hanya token terbaru yang hidup.
+        await tx.$queryRawUnsafe(`SELECT 1 FROM "users" WHERE "id" = $1 FOR UPDATE`, user.id);
+        // Satu token aktif per user: cabut yang belum terpakai sebelum buat baru.
+        await tx.passwordReset.deleteMany({ where: { userId: user.id, usedAt: null } });
+        const raw = randomBytes(32).toString('hex');
+        await tx.passwordReset.create({
+          data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 3600_000) },
+        });
+        await this.sendMail(
+          user.email!,
+          'Reset password JURNALISTIK APP',
+          `Tautan reset (1 jam): ${(process.env.WEB_URL ?? '').replace(/\/$/, '')}/reset?token=${raw}`,
+        );
       });
-      await this.sendMail(
-        user.email,
-        'Reset password JURNALISTIK APP',
-        `Tautan reset (1 jam): ${(process.env.WEB_URL ?? '').replace(/\/$/, '')}/reset?token=${raw}`,
-      );
     }
     return { ok: true };
   }
@@ -225,26 +231,36 @@ export class AuthService {
   }
 
   async verify2fa(pendingToken: string, code: string) {
-    let payload: any;
+    // Atomic consume: konkuren kedua / replay dapat count 0 → ditolak.
+    // Klaim yang gagal karena kode salah di-refund agar typo tak membakar
+    // challenge (brute force tetap dibatasi lockout per-akun).
+    const now = new Date();
+    const claimed = await this.prisma.twoFaChallenge.updateMany({
+      where: { id: pendingToken, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (!claimed.count) throw new UnauthorizedException('Sesi 2FA kedaluwarsa');
+    const refund = () =>
+      this.prisma.twoFaChallenge.updateMany({ where: { id: pendingToken, usedAt: now }, data: { usedAt: null } });
     try {
-      payload = await this.jwt.verifyAsync(pendingToken);
-    } catch {
-      throw new UnauthorizedException('Sesi 2FA kedaluwarsa');
+      const challenge = await this.prisma.twoFaChallenge.findUniqueOrThrow({ where: { id: pendingToken } });
+      const user = await this.prisma.user.findUnique({ where: { id: challenge.userId } });
+      if (!user || user.status !== 'ACTIVE' || !user.totpEnabled || !user.totpSecret)
+        throw new UnauthorizedException('Unauthorized');
+      if (user.lockedUntil && user.lockedUntil > new Date()) throw new UnauthorizedException('Akun terkunci sementara');
+      if (!verifyTotp(user.totpSecret, code)) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { failedLogins: { increment: 1 }, ...(user.failedLogins + 1 >= Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5) ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_000) } : {}) },
+        });
+        throw new UnauthorizedException('Kode salah');
+      }
+      await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
+      return { ...(await this.issueTokens(user.id)), mustChangePassword: user.mustChangePassword };
+    } catch (e) {
+      await refund().catch(() => {});
+      throw e;
     }
-    if (payload.purpose !== '2fa') throw new UnauthorizedException('Token tidak valid');
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || user.status !== 'ACTIVE' || !user.totpEnabled || !user.totpSecret)
-      throw new UnauthorizedException('Unauthorized');
-    if (user.lockedUntil && user.lockedUntil > new Date()) throw new UnauthorizedException('Akun terkunci sementara');
-    if (!verifyTotp(user.totpSecret, code)) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { failedLogins: { increment: 1 }, ...(user.failedLogins + 1 >= Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5) ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_000) } : {}) },
-      });
-      throw new UnauthorizedException('Kode salah');
-    }
-    await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
-    return { ...(await this.issueTokens(user.id)), mustChangePassword: user.mustChangePassword };
   }
 
   private async sendMail(to: string, subject: string, text: string) {    if (!process.env.SMTP_HOST) {

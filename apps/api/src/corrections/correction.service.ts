@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
@@ -18,6 +19,7 @@ export class CorrectionService {
     private prisma: PrismaService,
     private audit: AuditService,
     private attendance: AttendanceService,
+    private notif: NotificationsService,
     private storage: StorageService,
     private config: OrgConfigService,
   ) {}
@@ -89,6 +91,8 @@ export class CorrectionService {
     return this.prisma.correctionRequest.update({ where: { id }, data: { status: 'CANCELLED' } });
   }
 
+  // Satu transaksi: claim PENDING + adjust PRESENT + audit + APPROVED (KURANG.md §2).
+  // Tak ada lagi PRESENT tanpa APPROVED atau APPROVED tanpa attendance. Notif setelah commit.
   async decide(actor: { id: string; role: string; division: string }, id: string, approve: boolean, reviewNote: string) {
     const r = await this.prisma.correctionRequest.findUnique({ where: { id } });
     if (!r) throw new NotFoundException('Tidak ditemukan');
@@ -96,25 +100,32 @@ export class CorrectionService {
     if (r.userId === actor.id) throw new ForbiddenException('Tidak boleh memutus klaim sendiri');
     const target = await this.prisma.user.findUnique({ where: { id: r.userId }, select: { id: true, division: true } });
     if (!target || !canManageMember(actor as any, target as any)) throw new ForbiddenException('Di luar divisi Anda');
-    // Adjust dulu: gagal adjust → klaim tetap PENDING (tak ada APPROVED tanpa hadir).
-    if (approve)
-      await this.attendance.adjust(actor, r.meetingId, r.userId, 'PRESENT', `Klaim anggota disetujui: ${reviewNote ?? ''}`);
     const now = new Date();
-    const updated = await this.prisma.$transaction(async (tx: any) => {
+    const reason = `Klaim anggota disetujui: ${reviewNote ?? ''}`;
+    const out = await this.prisma.$transaction(async (tx: any) => {
       // Conditional update: dua reviewer konkuren → hanya satu yang dapat count 1.
       const claimed = await tx.correctionRequest.updateMany({
         where: { id, status: 'PENDING' },
         data: { status: approve ? 'APPROVED' : 'REJECTED', reviewerId: actor.id, reviewNote: reviewNote ?? '', reviewedAt: now },
       });
       if (!claimed.count) throw new BadRequestException('Sudah diputuskan');
-      const u = await tx.correctionRequest.findUniqueOrThrow({ where: { id } });
+      let attId: string | undefined;
+      if (approve) {
+        const a = await this.attendance.adjust(actor, r.meetingId, r.userId, 'PRESENT', reason, tx, true);
+        attId = a.id;
+      }
       await this.audit.log({
         actorId: actor.id, action: approve ? 'correction.approve' : 'correction.reject',
         entity: 'CorrectionRequest', entityId: id,
-        oldValue: { status: 'PENDING' } as any, newValue: { status: u.status } as any,
+        oldValue: { status: 'PENDING' } as any,
+        newValue: { status: approve ? 'APPROVED' : 'REJECTED' } as any,
       }, tx);
-      return u;
+      const u = await tx.correctionRequest.findUniqueOrThrow({ where: { id } });
+      return { claim: u, attId };
     });
-    return updated;
+    if (approve && out.attId)
+      await this.notif.notifyUsers([r.userId], 'attendance-adjusted', `Kehadiran dikoreksi pengurus`, reason,
+        { refType: 'Attendance', refId: out.attId }).catch(() => {});
+    return out.claim;
   }
 }

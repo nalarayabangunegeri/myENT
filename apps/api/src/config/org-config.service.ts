@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Konfigurasi organisasi PRD §15.8. Default = kebijakan saat ini; P1 dapat diubah tanpa deploy.
@@ -12,34 +12,38 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 function assertEffectiveStatuses(v: unknown) {
-  if (!Array.isArray(v) || v.length === 0) throw new Error('effective_statuses harus array non-kosong');
+  if (!Array.isArray(v) || v.length === 0) throw new BadRequestException('effective_statuses harus array non-kosong');
   for (const s of v) {
     if (typeof s !== 'string' || !EFFECTIVE_ALLOWED.includes(s))
-      throw new Error('effective_statuses hanya boleh PRESENT/PERMITTED/SICK/DISPENSATION (ABSENT dilarang)');
+      throw new BadRequestException('effective_statuses hanya boleh PRESENT/PERMITTED/SICK/DISPENSATION (ABSENT dilarang)');
   }
-  if (new Set(v).size !== v.length) throw new Error('effective_statuses tidak boleh duplikat');
+  if (new Set(v).size !== v.length) throw new BadRequestException('effective_statuses tidak boleh duplikat');
 }
 
 function assertApprovalMapping(v: unknown) {
-  if (!isPlainObject(v)) throw new Error('approval_mapping harus object');
+  if (!isPlainObject(v)) throw new BadRequestException('approval_mapping harus object');
   for (const [k, val] of Object.entries(v)) {
-    if (!ABSENCE_REASONS.includes(k)) throw new Error(`approval_mapping key tidak dikenal: ${k}`);
+    if (!ABSENCE_REASONS.includes(k)) throw new BadRequestException(`approval_mapping key tidak dikenal: ${k}`);
     if (typeof val !== 'string' || !APPROVAL_VALUES.includes(val))
-      throw new Error('approval_mapping value hanya boleh SICK/PERMITTED/DISPENSATION');
+      throw new BadRequestException('approval_mapping value hanya boleh SICK/PERMITTED/DISPENSATION');
+  }
+  // KURANG.md §3: semua reason wajib ada — mapping tak lengkap = status undefined saat approve.
+  for (const reason of ABSENCE_REASONS) {
+    if (!(reason in v)) throw new BadRequestException(`approval_mapping belum memetakan ${reason}`);
   }
 }
 
 function assertAttachmentRequired(v: unknown) {
-  if (!isPlainObject(v)) throw new Error('attachment_required harus object');
+  if (!isPlainObject(v)) throw new BadRequestException('attachment_required harus object');
   for (const [k, val] of Object.entries(v)) {
-    if (!ABSENCE_REASONS.includes(k)) throw new Error(`attachment_required key tidak dikenal: ${k}`);
-    if (typeof val !== 'boolean') throw new Error('attachment_required value harus boolean');
+    if (!ABSENCE_REASONS.includes(k)) throw new BadRequestException(`attachment_required key tidak dikenal: ${k}`);
+    if (typeof val !== 'boolean') throw new BadRequestException('attachment_required value harus boolean');
   }
 }
 
 function assertIntRange(v: unknown, name: string, min: number, max: number) {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max)
-    throw new Error(`${name} harus integer ${min}–${max}`);
+    throw new BadRequestException(`${name} harus integer ${min}–${max}`);
 }
 export const CONFIG_DEFAULTS: Record<string, any> = {
   effective_statuses: ['PRESENT', 'PERMITTED', 'SICK', 'DISPENSATION'],
@@ -76,12 +80,12 @@ export class OrgConfigService {
   }
 
   async set(key: string, value: any) {
-    if (!(key in CONFIG_DEFAULTS)) throw new Error('Kunci konfigurasi tidak dikenal');
+    if (!(key in CONFIG_DEFAULTS)) throw new BadRequestException('Kunci konfigurasi tidak dikenal');
     if (key === 'max_upload_mb' || key === 'max_material_mb') {
-      if (typeof value !== 'number' || !(value >= 1 && value <= 20)) throw new Error('max_*_mb harus angka 1–20');
+      if (typeof value !== 'number' || !(value >= 1 && value <= 20)) throw new BadRequestException('max_*_mb harus angka 1–20');
     }
     if (key === 'max_active_loans_per_member' && (typeof value !== 'number' || !(value >= 1 && value <= 10)))
-      throw new Error('max_active_loans_per_member harus angka 1–10');
+      throw new BadRequestException('max_active_loans_per_member harus angka 1–10');
     if (key === 'effective_statuses') assertEffectiveStatuses(value);
     if (key === 'approval_mapping') assertApprovalMapping(value);
     if (key === 'attachment_required') assertAttachmentRequired(value);
@@ -95,7 +99,7 @@ export class OrgConfigService {
     }
     if (key === 'attendance_threshold_pct') {
       if (value !== null && (typeof value !== 'number' || value < 0 || value > 100))
-        throw new Error('attendance_threshold_pct harus null atau angka 0–100');
+        throw new BadRequestException('attendance_threshold_pct harus null atau angka 0–100');
     }
     await this.prisma.orgConfig.upsert({ where: { key }, create: { key, value }, update: { value } });
     this.cache.set(key, value);

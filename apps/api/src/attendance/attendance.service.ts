@@ -104,7 +104,8 @@ export class AttendanceService {
   }
 
   // BR-17: penyesuaian manual, alasan wajib, diaudit. Berlaku kapan pun termasuk finalized (PRD §13).
-  async adjust(actor: { id: string; role: string; division: string }, meetingId: string, targetUserId: string, status: string, reason: string) {
+  // db+silent: gabung ke transaksi pemanggil (correction approve) — notif dikirim pemanggil setelah commit.
+  async adjust(actor: { id: string; role: string; division: string }, meetingId: string, targetUserId: string, status: string, reason: string, db?: any, silent = false) {
     if (!reason?.trim()) throw new BadRequestException('Alasan wajib diisi');
     if (!['PRESENT', 'PERMITTED', 'SICK', 'DISPENSATION', 'ABSENT'].includes(status))
       throw new BadRequestException('Status tidak valid');
@@ -116,7 +117,7 @@ export class AttendanceService {
     const m = await this.prisma.meeting.findFirst({ where: { id: meetingId, deletedAt: null } });
     if (!m) throw new NotFoundException('Meeting tidak ditemukan');
     const now = new Date();
-    return this.prisma.$transaction(async (tx: any) => {
+    const run = async (tx: any) => {
       const before = await tx.attendance.findUnique({
         where: { userId_meetingId: { userId: targetUserId, meetingId } },
       });
@@ -133,12 +134,15 @@ export class AttendanceService {
         actorId, action: 'attendance.adjust', entity: 'Attendance', entityId: a.id,
         oldValue: (before?.status ?? null) as any, newValue: { status } as any, reason,
       }, tx);
-      await this.notif
-        .notifyUsers([targetUserId], 'attendance-adjusted', `Kehadiran dikoreksi pengurus`, reason,
-          { refType: 'Attendance', refId: a.id })
-        .catch(() => {});
+      if (!silent)
+        await this.notif
+          .notifyUsers([targetUserId], 'attendance-adjusted', `Kehadiran dikoreksi pengurus`, reason,
+            { refType: 'Attendance', refId: a.id })
+          .catch(() => {});
       return a;
-    });
+    };
+    if (db) return run(db);
+    return this.prisma.$transaction((tx: any) => run(tx));
   }
   async selfieUrl(reqUser: any, attendanceId: string, baseUrl: string) {
     const a = await this.prisma.attendance.findUnique({ where: { id: attendanceId } });

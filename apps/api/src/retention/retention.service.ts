@@ -84,6 +84,10 @@ export class RetentionService {
     const resets = await this.prisma.passwordReset.deleteMany({
       where: { OR: [{ usedAt: { not: null } }, { expiresAt: { lte: now } }] },
     });
+    // Challenge 2FA terpakai/kedaluwarsa (one-time — tak boleh menumpuk).
+    const challenges = await this.prisma.twoFaChallenge.deleteMany({
+      where: { OR: [{ usedAt: { not: null } }, { expiresAt: { lte: now } }] },
+    });
     // Foto pinjaman: hapus objek setelah kembali + masa retensi; record tetap.
     let loanPhotos = 0;
     for (;;) {
@@ -107,6 +111,6 @@ export class RetentionService {
         loanPhotos++;
       }
     }
-    return { selfies, attachments, submissions, notifications: notifs.count, sessions: sessions.count, resets: resets.count, loanPhotos };
+    return { selfies, attachments, submissions, notifications: notifs.count, sessions: sessions.count, resets: resets.count, challenges: challenges.count, loanPhotos };
   }
 }
