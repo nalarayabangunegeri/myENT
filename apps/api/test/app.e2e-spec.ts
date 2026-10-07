@@ -49,6 +49,8 @@ describe('vertical slice (e2e)', () => {
     const r = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'MemberPass123!' }).expect(200);
     memberT = r.body.accessToken;
     expect(r.body.mustChangePassword).toBe(false);
+    // PRD §17: consent privasi wajib sebelum selfie pertama.
+    await request(app.getHttpServer()).post('/auth/privacy-consent').set('Authorization', `Bearer ${memberT}`).expect(200);
   });
 
   it('meeting dibuat + publish + terlihat member', async () => {
@@ -87,6 +89,30 @@ describe('vertical slice (e2e)', () => {
       .set('Authorization', `Bearer ${memberT}`)
       .expect(200);
     expect(me.body.status).toBe('PRESENT');
+  });
+
+  it('tanpa consent → 403 PRIVACY_CONSENT_REQUIRED; setelah consent → bisa presensi', async () => {
+    const nim = `p${uniq()}`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E Consent', password: 'ConsentPass123!' })
+      .expect(201);
+    const login = await request(app.getHttpServer()).post('/auth/login').send({ nim, password: 'ConsentPass123!' }).expect(200);
+    const t = login.body.accessToken;
+    const jpg = await sharp({ create: { width: 32, height: 32, channels: 3, background: { r: 9, g: 9, b: 9 } } }).jpeg().toBuffer();
+    const denied = await request(app.getHttpServer())
+      .post(`/meetings/${meetingId}/attendance`)
+      .set('Authorization', `Bearer ${t}`)
+      .attach('selfie', jpg, 's.jpg')
+      .expect(403);
+    expect(denied.body.message).toMatch(/PRIVACY_CONSENT_REQUIRED/);
+    await request(app.getHttpServer()).post('/auth/privacy-consent').set('Authorization', `Bearer ${t}`).expect(200);
+    await request(app.getHttpServer())
+      .post(`/meetings/${meetingId}/attendance`)
+      .set('Authorization', `Bearer ${t}`)
+      .attach('selfie', jpg, 's.jpg')
+      .expect(201);
   });
 
   it('lockout setelah gagal berulang, pulih setelah dibuka', async () => {

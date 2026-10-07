@@ -21,6 +21,7 @@ Header: `Authorization: Bearer <accessToken>` (umur 15 mnt).Semua respons error:
 | `POST /auth/2fa/enable` | login | `{ code }` | Aktif setelah kode benar |
 | `POST /auth/2fa/disable` | login | `{ password }` | Matikan + hapus secret |
 | `POST /auth/2fa/verify` | — | `{ pendingToken, code }` | Langkah kedua login (token 5 mnt) |
+| `POST /auth/privacy-consent` | login | — | Catat persetujuan privasi selfie sekali (PRD §17); wajib sebelum presensi pertama → tanpa itu `403 PRIVACY_CONSENT_REQUIRED` |
 
 `mustChangePassword=true` (akun baru/reset): endpoint lain 401 sampai ganti password.
 
