@@ -33,19 +33,23 @@ Service `db` tidak publish port — backup lewat `exec` ke container (bukan `loc
 
 ```bash
 # .env.prod sudah berisi POSTGRES_USER/POSTGRES_DB
-0 2 * * * cd /srv/myENT && set -a && . ./.env.prod && set +a && docker compose -f docker-compose.prod.yml exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /srv/backup/jurnalistik-$(date +\%F).sql && find /srv/backup -name 'jurnalistik-*.sql' -mtime +7 -delete
+# Format disamakan dengan scripts/backup.sh: backup-YYYYMMDD.sql.gz + prune 7 hari.
+0 2 * * * cd /srv/myENT && set -a && . ./.env.prod && set +a && docker compose -f docker-compose.prod.yml exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > /srv/backup/backup-$(date +\%Y\%m\%d).sql.gz && find /srv/backup -maxdepth 1 -name 'backup-*.sql.gz' -mtime +7 -delete
 ```
 
-File upload (driver `local` — pg_dump TIDAK mencakupnya; driver `r2` → aktifkan versioning bucket, backup ini tak perlu):
+File upload (driver `local` — pg_dump TIDAK mencakupnya; driver `r2` → aktifkan versioning bucket, backup ini tak perlu).
+Format sama dengan script (`uploads-YYYYMMDD.tgz`, prune 7 hari):
 
 ```bash
-15 2 * * * docker run --rm -v $(docker volume ls -q | grep -m1 'uploads$'):/u -v /srv/backup:/b alpine tar czf /b/uploads-$(date +\%F).tgz -C /u . && find /srv/backup -name 'uploads-*.tgz' -mtime +7 -delete
+15 2 * * * docker run --rm -v $(docker volume ls -q | grep -m1 'uploads$'):/u -v /srv/backup:/b alpine sh -c 'tar czf /b/uploads-$(date +%Y%m%d).tgz -C /u . && find /b -maxdepth 1 -name "uploads-*.tgz" -mtime +7 -delete'
 ```
 
-Restore: `gunzip -c backup.sql.gz | psql "$DATABASE_URL_BERSIH"` (format baru terkompresi; lihat `scripts/backup.sh`).
+Restore: `gunzip -c /srv/backup/backup-YYYYMMDD.sql.gz | psql "$DATABASE_URL_BERSIH"` (format baru terkompresi; lihat `scripts/backup.sh`).
 Uji restore berkala (PRD §18): restore ke DB kosong → login + rekap OK — catat tanggal drill di bawah.
 
-Drill terakhir: - (isi setelah drill pertama)
+Drill terakhir: 2026-10-07 (lokal: backup `.sql.gz` via `scripts/backup.sh` → restore ke DB
+kosong → boot API → login + ganti password seed → rekap + meetings terbaca OK).
+Ulangi drill ini di VPS production (dengan volume uploads bila driver local) sebelum pilot.
 
 ## 5. Rollout bertahap 150 anggota
 

@@ -156,3 +156,18 @@
   via `@prisma/adapter-pg` (`PrismaService` + `seed.ts`). `migrate ... --schema` dari root
   wajib `--config` (entrypoint + README disesuaikan); dari cwd `apps/api` auto-discover.
   URL `?schema=public` tetap boleh dipakai.
+
+## Hardening KURANG.md (2026-10-07)
+- Scheduler: satu transaksi (lock→transisi→finalize→spawn→reminder-claim),
+  broadcast setelah commit; recurring unik (parent,startAt) + BIWEEKLY cadence fix;
+  MeetingJob guard NaN interval. Akar flaky e2e: `MEETING_TICK_MS='3600_000'`
+  (NaN → storm tick 1ms) di app.e2e — dibetulkan + guard runtime.
+- Correction approve satu tx (claim→adjust→audit), adjust() dukung tx luar + silent.
+- approval_mapping wajib lengkap 6 reason; OrgConfig error → 400.
+- 2FA challenge one-time di DB (claim atomik, refund saat kode salah, cleanup di retention).
+- Turnstile bypass hanya non-prod; forgot-password serial per-user (FOR UPDATE).
+- BFF refresh coalescing per-session; vitest admin (ratelimit/turnstile/coalescer) + CI step.
+- Backup: format cron = script; drill lokal 2026-10-07 OK, drill prod VPS pending.
+- Prisma generator baru (`prisma-client`, output `src/generated/`, gitignored); `@prisma/client`
+  dipertahankan untuk runtime engine. Overrides: postcss/uuid/deepmerge-ts/mysql2;
+  sisa braces+sprintf-js tanpa fix upstream (dev-only, diterima).
