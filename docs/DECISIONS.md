@@ -152,3 +152,7 @@
 - Nest 11→12 (ESM-only): unit/e2e butuh Node ≥24 + `jest-transformer.cjs` (paksa CJS +
   `import.meta`→`__filename`/`__dirname` untuk 1 file `load-package.util.js`). Node lokal: `~/.local/node24`.
 - Next 15→16 + React 19.3: tanpa perubahan kode.
+- Prisma 6→7: `url` keluar dari schema → `apps/api/prisma.config.ts`; runtime koneksi
+  via `@prisma/adapter-pg` (`PrismaService` + `seed.ts`). `migrate ... --schema` dari root
+  wajib `--config` (entrypoint + README disesuaikan); dari cwd `apps/api` auto-discover.
+  URL `?schema=public` tetap boleh dipakai.

@@ -1,8 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
 
 async function main() {
-  const prisma = new PrismaClient();
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     const nim = process.env.SEED_ADMIN_NIM ?? 'admin001';
     const pass = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe12345!';

@@ -35,7 +35,7 @@ docker compose up -d db
 
 # 2. Install + schema + seed
 bun install
-apps/api/node_modules/.bin/prisma migrate dev --schema apps/api/prisma/schema.prisma
+apps/api/node_modules/.bin/prisma migrate dev --config apps/api/prisma.config.ts
 SEED_ADMIN_NIM=admin001 SEED_ADMIN_PASSWORD='UbahSaya123!' bun apps/api/prisma/seed.ts
 
 # 3. Jalan (terminal masing-masing)

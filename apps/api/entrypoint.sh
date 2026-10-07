@@ -3,5 +3,5 @@
 # ponytail: migrate tiap start aman untuk 1 replika (default). Jangan scale api >1
 # tanpa job migrasi one-shot — dua migrate deploy konkuren bisa berebut advisory lock.
 set -e
-./apps/api/node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
+./apps/api/node_modules/.bin/prisma migrate deploy --config apps/api/prisma.config.ts
 exec bun apps/api/dist/main.js
