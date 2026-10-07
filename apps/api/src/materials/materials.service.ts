@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
+import { assertPdf } from '../storage/sanitize';
 
 export const isPdf = (b: Buffer) => b.length > 4 && b.toString('ascii', 0, 4) === '%PDF';
 
@@ -23,11 +24,18 @@ export class MaterialsService {
     const maxMb = await this.config.get<number>('max_material_mb');
     if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
     if (!isPdf(file)) throw new BadRequestException('Materi harus PDF');
+    assertPdf(file); // %PDF- kepala + %%EOF ekor; tolak polyglot.
     const key = `materials/${randomUUID()}.pdf`;
     await this.storage.save(key, file, 'application/pdf');
-    const m = await this.prisma.material.create({
-      data: { title, description: description ?? '', objectKey: key, mime: 'application/pdf', size: file.length, meetingId: meetingId || null, uploaderId: actorId },
-    });
+    let m;
+    try {
+      m = await this.prisma.material.create({
+        data: { title, description: description ?? '', objectKey: key, mime: 'application/pdf', size: file.length, meetingId: meetingId || null, uploaderId: actorId },
+      });
+    } catch (e) {
+      await this.storage.remove(key); // DB gagal → jangan tinggalkan file yatim.
+      throw e;
+    }
     await this.audit.log({ actorId, action: 'material.upload', entity: 'Material', entityId: m.id, newValue: { title } as any });
     await this.notif.broadcast(undefined, 'material', `Materi baru: ${title}`, '');
     return m;

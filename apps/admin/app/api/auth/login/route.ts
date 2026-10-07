@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { API, setSession } from '@/lib/auth';
+import { API, originOk, setSession } from '@/lib/auth';
+import { clientIp, rateLimited } from '@/lib/ratelimit';
 
 async function turnstileOk(token: string | undefined, ip?: string | null) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
@@ -16,8 +17,12 @@ async function turnstileOk(token: string | undefined, ip?: string | null) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!originOk(req)) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+  const ip = clientIp(req);
+  // Backend sudah lockout per-akun; ini lapis per-IP (Turnstile tetap wajib).
+  if (rateLimited(`login:${ip}`, 20, 10 * 60_1000))
+    return NextResponse.json({ message: 'Terlalu banyak percobaan, coba lagi nanti' }, { status: 429 });
   const body = await req.json();
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   if (!(await turnstileOk(body['cf-turnstile-response'], ip)))
     return NextResponse.json({ message: 'Verifikasi manusia gagal' }, { status: 403 });
   const { 'cf-turnstile-response': _, ...login } = body;

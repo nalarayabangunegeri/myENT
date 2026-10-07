@@ -80,6 +80,13 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('privacy-consent')
+  @HttpCode(200)
+  consent(@Req() req: any) {
+    return this.auth.consentPrivacy(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('change-password')
   change(@Req() req: any, @Body() dto: ChangePasswordDto) {
     return this.auth.changePassword(req.user.id, dto.oldPassword, dto.newPassword);

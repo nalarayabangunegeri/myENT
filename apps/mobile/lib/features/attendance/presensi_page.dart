@@ -109,10 +109,41 @@ class _PresensiPageState extends State<PresensiPage> {
     }
   }
 
+  // Privacy consent (PRD §17): backend 403 PRIVACY_CONSENT_REQUIRED sebelum selfie pertama.
+  Future<bool> _mintaConsent() async {
+    final setuju = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        title: const Text('Izin privasi'),
+        content: const Text(
+            'Presensi memakai foto selfie yang disimpan privat dan dihapus otomatis setelah masa retensi. '
+            'Lanjutkan hanya bila kamu setuju.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Batal')),
+          ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Setuju')),
+        ],
+      ),
+    );
+    if (setuju != true) return false;
+    try {
+      await Api.post('/auth/privacy-consent', {});
+      return true;
+    } catch (e) {
+      lastError = e.toString();
+      return false;
+    }
+  }
+
   Future<void> _submitLoop() async {
     final mid = widget.meeting['id'];
     while (true) {
       final s = await _kirimSekali();
+      if (s == 403 && (lastError ?? '').contains('PRIVACY_CONSENT_REQUIRED')) {
+        if (await _mintaConsent()) continue; // consent tersimpan → ulangi kirim
+        if (mounted) setState(() => status = 'Presensi butuh persetujuan privasi');
+        break;
+      }
       if (s == 409) {
         // 409 = duplikat milik sendiri (BR-01) → verifikasi dulu biar tak false-positive.
         try {

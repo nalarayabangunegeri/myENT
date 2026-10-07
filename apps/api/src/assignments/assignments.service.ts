@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
 import { isPdf } from '../materials/materials.service';
+import { assertPdf, sanitizeImage } from '../storage/sanitize';
 
 // Status submission diturunkan (PRD §15.3): REVIEWED > LATE > SUBMITTED (tanpa record = NOT_SUBMITTED).
 export function submissionStatus(s: { submittedAt: Date; reviewedAt: Date | null }, deadline: Date) {
@@ -30,13 +31,26 @@ export class AssignmentsService {
     if (file?.length) {
       const maxMb = await this.config.get<number>('max_material_mb');
       if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
-      if (!isPdf(file) && !detectImage(file)) throw new BadRequestException('Lampiran harus PDF/foto');
+      let mime: string;
+      if (detectImage(file)) {
+        file = await sanitizeImage(file);
+        mime = 'image/jpeg';
+      } else if (isPdf(file)) {
+        assertPdf(file);
+        mime = 'application/pdf';
+      } else throw new BadRequestException('Lampiran harus PDF/foto');
       attachmentKey = `assignments/${randomUUID()}`;
-      await this.storage.save(attachmentKey, file, isPdf(file) ? 'application/pdf' : 'image/jpeg');
+      await this.storage.save(attachmentKey, file, mime);
     }
-    const a = await this.prisma.assignment.create({
-      data: { title, description: description ?? '', meetingId: meetingId || null, deadline, attachmentKey, creatorId: actorId },
-    });
+    let a;
+    try {
+      a = await this.prisma.assignment.create({
+        data: { title, description: description ?? '', meetingId: meetingId || null, deadline, attachmentKey, creatorId: actorId },
+      });
+    } catch (e) {
+      if (attachmentKey) await this.storage.remove(attachmentKey);
+      throw e;
+    }
     await this.notif.broadcast(undefined, 'assignment', `Tugas baru: ${title}`, '');
     return a;
   }
@@ -58,16 +72,29 @@ export class AssignmentsService {
     if (!file?.length) throw new BadRequestException('File wajib');
     const maxMb = await this.config.get<number>('max_upload_mb');
     if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
-    if (!isPdf(file) && !detectImage(file)) throw new BadRequestException('File harus PDF/foto');
+    let mime: string;
+    if (detectImage(file)) {
+      file = await sanitizeImage(file);
+      mime = 'image/jpeg';
+    } else if (isPdf(file)) {
+      assertPdf(file);
+      mime = 'application/pdf';
+    } else throw new BadRequestException('File harus PDF/foto');
     const key = `submissions/${assignmentId}/${userId}/${randomUUID()}`;
-    await this.storage.save(key, file, isPdf(file) ? 'application/pdf' : 'image/jpeg');
+    await this.storage.save(key, file, mime);
     const now = new Date();
     const prev = await this.prisma.submission.findUnique({ where: { assignmentId_userId: { assignmentId, userId } } });
-    const out = await this.prisma.submission.upsert({
-      where: { assignmentId_userId: { assignmentId, userId } },
-      create: { assignmentId, userId, objectKey: key, submittedAt: now },
-      update: { objectKey: key, submittedAt: now, reviewedAt: null, reviewNote: '' },
-    });
+    let out;
+    try {
+      out = await this.prisma.submission.upsert({
+        where: { assignmentId_userId: { assignmentId, userId } },
+        create: { assignmentId, userId, objectKey: key, submittedAt: now },
+        update: { objectKey: key, submittedAt: now, reviewedAt: null, reviewNote: '' },
+      });
+    } catch (e) {
+      await this.storage.remove(key); // upsert gagal → key baru jangan yatim.
+      throw e;
+    }
     if (prev && prev.objectKey !== key) await this.storage.remove(prev.objectKey).catch(() => {});
     // Kumpul ulang setelah review = review hangus; catat agar tak hilang diam-diam.
     if (prev?.reviewedAt)

@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
-import { API, clearSession } from '@/lib/auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { API, clearSession, originOk } from '@/lib/auth';
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  if (!originOk(req)) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   const c = await cookies();
   const refresh = c.get('refresh')?.value;
   if (refresh)

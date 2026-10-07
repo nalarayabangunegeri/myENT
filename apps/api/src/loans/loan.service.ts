@@ -6,6 +6,7 @@ import { StorageService } from '../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
+import { sanitizeImage } from '../storage/sanitize';
 
 @Injectable()
 export class LoanService {
@@ -25,11 +26,12 @@ export class LoanService {
     await this.prisma.itemHistory.create({ data: { itemId, actorId, action, oldValue, newValue, note } });
   }
 
-  private async checkPhoto(file?: Buffer) {
+  private async cleanPhoto(file?: Buffer): Promise<Buffer> {
     if (!file?.length) throw new BadRequestException('Foto wajib');
     const maxMb = await this.config.get<number>('max_upload_mb');
     if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
     if (!detectImage(file)) throw new BadRequestException('Foto harus JPG/PNG/WebP');
+    return sanitizeImage(file); // re-encode: buang EXIF + metadata.
   }
 
   async createItem(actorId: string, name: string, code: string, category: string, condition: string) {
@@ -74,9 +76,9 @@ export class LoanService {
 
   async borrow(user: any, itemId: string, dueAt: Date, noteOut: string, photo: Buffer) {
     if (!(dueAt instanceof Date) || isNaN(+dueAt) || dueAt <= new Date()) throw new BadRequestException('Tenggat harus di masa depan');
-    await this.checkPhoto(photo);
+    const clean = await this.cleanPhoto(photo);
     const key = this.photoKey(itemId);
-    await this.storage.save(key, photo, 'image/jpeg');
+    await this.storage.save(key, clean, 'image/jpeg');
     try {
       const loan = await this.prisma.$transaction(async (tx: any) => {
         // Cek di dalam tx: jendela balapan menyempit; P2002 tetap jaring terakhir.
@@ -110,17 +112,23 @@ export class LoanService {
     const loan = await this.prisma.loan.findUnique({ where: { id } });
     if (!loan) throw new NotFoundException('Tidak ditemukan');
     if (!['ACTIVE', 'OVERDUE'].includes(loan.status)) throw new BadRequestException('Sudah selesai');
-    await this.checkPhoto(photo);
+    const clean = await this.cleanPhoto(photo);
     const key = this.photoKey(loan.itemId);
-    await this.storage.save(key, photo, 'image/jpeg');
+    await this.storage.save(key, clean, 'image/jpeg');
     const now = new Date();
-    const out = await this.prisma.$transaction(async (tx: any) => {
-      const l = await tx.loan.update({
-        where: { id }, data: { status: 'RETURNED', photoInKey: key, noteIn: noteIn ?? '', returnedAt: now },
+    let out;
+    try {
+      out = await this.prisma.$transaction(async (tx: any) => {
+        const l = await tx.loan.update({
+          where: { id }, data: { status: 'RETURNED', photoInKey: key, noteIn: noteIn ?? '', returnedAt: now },
+        });
+        await tx.item.update({ where: { id: loan.itemId }, data: { status: damaged ? 'MAINTENANCE' : 'AVAILABLE' } });
+        return l;
       });
-      await tx.item.update({ where: { id: loan.itemId }, data: { status: damaged ? 'MAINTENANCE' : 'AVAILABLE' } });
-      return l;
-    });
+    } catch (e) {
+      await this.storage.remove(key);
+      throw e;
+    }
     await this.audit.log({
       actorId, action: 'loan.return', entity: 'Loan', entityId: id,
       oldValue: { status: loan.status } as any, newValue: { status: 'RETURNED', damaged } as any,

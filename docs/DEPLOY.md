@@ -42,7 +42,7 @@ File upload (driver `local` — pg_dump TIDAK mencakupnya; driver `r2` → aktif
 15 2 * * * docker run --rm -v $(docker volume ls -q | grep -m1 'uploads$'):/u -v /srv/backup:/b alpine tar czf /b/uploads-$(date +\%F).tgz -C /u . && find /srv/backup -name 'uploads-*.tgz' -mtime +7 -delete
 ```
 
-Restore: `psql "$DATABASE_URL_BERSIH" < backup.sql` (lihat `scripts/backup.sh`).
+Restore: `gunzip -c backup.sql.gz | psql "$DATABASE_URL_BERSIH"` (format baru terkompresi; lihat `scripts/backup.sh`).
 Uji restore berkala (PRD §18): restore ke DB kosong → login + rekap OK — catat tanggal drill di bawah.
 
 Drill terakhir: - (isi setelah drill pertama)

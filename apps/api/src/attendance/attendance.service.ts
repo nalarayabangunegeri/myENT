@@ -9,7 +9,7 @@ import { OrgConfigService } from '../config/org-config.service';
 import { assertSelfWindow, detectImage, selfieKey } from './attendance.rules';
 import { assertInside } from './location';
 import { canManageMember } from '../common/policy';
-import { EFFECTIVE_STATUSES, percentage } from '../absence/absence.rules';
+import { AttendanceStatsService } from './attendance-stats.service';
 
 @Injectable()
 export class AttendanceService {
@@ -19,10 +19,15 @@ export class AttendanceService {
     private audit: AuditService,
     private notif: NotificationsService,
     private config: OrgConfigService,
+    private stats: AttendanceStatsService,
   ) {}
 
   async createSelf(userId: string, meetingId: string, file: Buffer, loc?: { latitude?: number; longitude?: number }) {
     if (!file?.length) throw new BadRequestException('Selfie wajib');
+    // PRD §17: consent sebelum selfie pertama — disimpan server, tak bisa dipalsukan client.
+    const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { privacyConsentedAt: true } });
+    if (!u?.privacyConsentedAt)
+      throw new ForbiddenException('PRIVACY_CONSENT_REQUIRED: setujui pemberitahuan privasi sebelum presensi selfie');
     const m = await this.prisma.meeting.findFirst({ where: { id: meetingId, deletedAt: null } });
     if (!m || m.status === 'DRAFT') throw new NotFoundException('Meeting tidak ditemukan');
     const now = new Date(); // BR-02: waktu server, bukan client.
@@ -161,9 +166,8 @@ export class AttendanceService {
     });
     const by: Record<string, number> = { PRESENT: 0, PERMITTED: 0, SICK: 0, DISPENSATION: 0, ABSENT: 0 };
     for (const r of rows) by[r.status]++;
-    const effList = await this.config.get<string[]>('effective_statuses');
-    const effective = effList.reduce((s, k) => s + (by[k] ?? 0), 0);
-    const pctVal = percentage(effective, rows.length);
+    const effective = await this.stats.countEffective(by);
+    const pctVal = this.stats.pct(effective, rows.length);
     const threshold = await this.config.get<number | null>('attendance_threshold_pct');
     return {
       counted: rows.length, present: by.PRESENT, permitted: by.PERMITTED, sick: by.SICK,
@@ -200,13 +204,13 @@ export class AttendanceService {
       if (!per.has(g.userId)) per.set(g.userId, { PRESENT: 0, PERMITTED: 0, SICK: 0, DISPENSATION: 0, ABSENT: 0 });
       per.get(g.userId)![g.status] = Number(g._count);
     }
-    const effList = await this.config.get<string[]>('effective_statuses');
+    const effList = await this.stats.effectiveList();
     const threshold = await this.config.get<number | null>('attendance_threshold_pct');
     const rows = users.map((u) => {
       const b = per.get(u.id) ?? { PRESENT: 0, PERMITTED: 0, SICK: 0, DISPENSATION: 0, ABSENT: 0 };
       const counted = b.PRESENT + b.PERMITTED + b.SICK + b.DISPENSATION + b.ABSENT;
       const eff = effList.reduce((s, k) => s + (b[k] ?? 0), 0);
-      const pctVal = percentage(eff, counted);
+      const pctVal = this.stats.pct(eff, counted);
       return {
         user: u, counted, present: b.PRESENT, permitted: b.PERMITTED, sick: b.SICK,
         dispensation: b.DISPENSATION, absent: b.ABSENT, percentage: pctVal,

@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AttendanceStatsService } from '../attendance/attendance-stats.service';
 import { badges, streaks } from './points.rules';
 
 @Injectable()
 export class InsightService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private stats: AttendanceStatsService) {}
 
   async dashboard() {
     const monthStart = new Date();
@@ -27,7 +28,7 @@ export class InsightService {
     ]);
     const c: Record<string, number> = {};
     for (const g of att) c[g.status] = Number(g._count);
-    const eff = (c.PRESENT ?? 0) + (c.PERMITTED ?? 0) + (c.SICK ?? 0) + (c.DISPENSATION ?? 0);
+    const eff = await this.stats.countEffective(c);
     const tot = eff + (c.ABSENT ?? 0);
     return {
       members, activeMembers: active, meetings, activeAssignments: assignments, pendingRequests: pending,
@@ -131,7 +132,7 @@ export class InsightService {
         take: CAP,
       }),
     ]);
-    const eff = new Set(['PRESENT', 'PERMITTED', 'SICK', 'DISPENSATION']);
+    const eff = new Set(await this.stats.effectiveList());
     const by = new Map<string, { total: number; effective: number }>();
     for (const r of rows) {
       const k = `${r.submittedAt.getUTCFullYear()}-${String(r.submittedAt.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -177,7 +178,7 @@ export class InsightService {
       },
       _count: true,
     });
-    const eff = new Set(['PRESENT', 'PERMITTED', 'SICK', 'DISPENSATION']);
+    const eff = new Set(await this.stats.effectiveList());
     const div = new Map<string, { total: number; effective: number }>();
     const owner = new Map(users.map((u) => [u.id, u.division || '-']));
     for (const g of groups) {

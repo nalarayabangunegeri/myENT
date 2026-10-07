@@ -6,6 +6,7 @@ import { StorageService } from '../storage/storage.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
 import { isPdf } from '../materials/materials.service';
+import { assertPdf, sanitizeImage } from '../storage/sanitize';
 import { canManageMember } from '../common/policy';
 import { randomUUID } from 'crypto';
 
@@ -24,17 +25,29 @@ export class CorrectionService {
   async create(userId: string, meetingId: string, claim: string, file?: Buffer) {
     const m = await this.prisma.meeting.findFirst({ where: { id: meetingId, deletedAt: null } });
     if (!m || m.status === 'DRAFT') throw new NotFoundException('Meeting tidak ditemukan');
-    if (new Date() <= m.attendanceCloseAt)
+    const now = new Date();
+    if (now <= m.attendanceCloseAt)
       throw new BadRequestException('Window masih terbuka — presensi langsung saja');
+    // P2-01: klaim kedaluwarsa N hari setelah window tutup — jangan berbulan-bulan.
+    const windowDays = await this.config.get<number>('correction_window_days');
+    if (now.getTime() > m.attendanceCloseAt.getTime() + windowDays * 86400_000)
+      throw new BadRequestException(`Masa koreksi habis (maks ${windowDays} hari setelah kegiatan)`);
     const att = await this.prisma.attendance.findUnique({ where: { userId_meetingId: { userId, meetingId } } });
     if (att?.status === 'PRESENT') throw new ConflictException('Sudah tercatat hadir');
     let attachmentObjectKey: string | undefined;
     if (file?.length) {
       const maxMb = await this.config.get<number>('max_upload_mb');
       if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
-      if (!detectImage(file) && !isPdf(file)) throw new BadRequestException('Bukti harus foto/PDF');
+      let mime: string;
+      if (detectImage(file)) {
+        file = await sanitizeImage(file);
+        mime = 'image/jpeg';
+      } else if (isPdf(file)) {
+        assertPdf(file);
+        mime = 'application/pdf';
+      } else throw new BadRequestException('Bukti harus foto/PDF');
       attachmentObjectKey = `corrections/${meetingId}/${userId}/${randomUUID()}`;
-      await this.storage.save(attachmentObjectKey, file, isPdf(file) ? 'application/pdf' : 'image/jpeg');
+      await this.storage.save(attachmentObjectKey, file, mime);
     }
     try {
       return await this.prisma.correctionRequest.create({ data: { userId, meetingId, claim, attachmentObjectKey } });
@@ -88,10 +101,13 @@ export class CorrectionService {
       await this.attendance.adjust(actor, r.meetingId, r.userId, 'PRESENT', `Klaim anggota disetujui: ${reviewNote ?? ''}`);
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx: any) => {
-      const u = await tx.correctionRequest.update({
-        where: { id },
+      // Conditional update: dua reviewer konkuren → hanya satu yang dapat count 1.
+      const claimed = await tx.correctionRequest.updateMany({
+        where: { id, status: 'PENDING' },
         data: { status: approve ? 'APPROVED' : 'REJECTED', reviewerId: actor.id, reviewNote: reviewNote ?? '', reviewedAt: now },
       });
+      if (!claimed.count) throw new BadRequestException('Sudah diputuskan');
+      const u = await tx.correctionRequest.findUniqueOrThrow({ where: { id } });
       await this.audit.log({
         actorId: actor.id, action: approve ? 'correction.approve' : 'correction.reject',
         entity: 'CorrectionRequest', entityId: id,
