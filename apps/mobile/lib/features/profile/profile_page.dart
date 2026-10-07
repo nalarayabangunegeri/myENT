@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/session.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -101,33 +103,91 @@ class _ProfilePageState extends State<ProfilePage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text(me?['name'] ?? 'Memuat…', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            Text('${me?['nim'] ?? ''} · ${me?['division'] ?? ''}'),
-            const SizedBox(height: 8),
-            if (poin != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${poin!['points'] ?? 0} poin · peringkat ${poin!['rank'] ?? '–'} · 🔥${poin!['streak'] ?? 0}x',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 6,
-                      children: [for (final b in (poin!['badges'] as List? ?? [])) Chip(label: Text('${b['label']}'))],
+            AppCard(
+              child: Row(
+                children: [
+                  InitialAvatar(name: '${me?['name'] ?? '?'}', size: 56),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${me?['name'] ?? 'Memuat…'}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: brandDeep)),
+                        Text('${me?['nim'] ?? ''} · ${me?['division'] ?? ''}', style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                        if (poin != null) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: const BoxDecoration(color: goldSoft, borderRadius: BorderRadius.all(Radius.circular(99))),
+                            child: Text(
+                              '${poin!['points'] ?? 0} poin · peringkat ${poin!['rank'] ?? '–'} · 🔥${poin!['streak'] ?? 0}x',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: warnFg),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ]),
+                  ),
+                ],
+              ),
+            ),
+            if (poin != null && ((poin!['badges'] as List?) ?? []).isNotEmpty) ...[
+              const SizedBox(height: 12),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionHead(title: 'Lencana'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final b in (poin!['badges'] as List? ?? []))
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: const BoxDecoration(color: brandSoft, borderRadius: BorderRadius.all(Radius.circular(99))),
+                            child: Text('${b['label']}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: brand)),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            const SizedBox(height: 16),
-            if (msg != null) Text(msg!),
-            TextField(controller: lama, decoration: const InputDecoration(labelText: 'Password lama'), obscureText: true),
-            TextField(controller: baru, decoration: const InputDecoration(labelText: 'Password baru (min 10)'), obscureText: true),
-            ElevatedButton(onPressed: busy ? null : ganti, child: const Text('Ganti password')),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: busy ? null : keluar,
-              child: const Text('Keluar'),
+            ],
+            const SizedBox(height: 12),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SectionHead(title: 'Ganti Password'),
+                  if (msg != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(color: brandSoft, borderRadius: BorderRadius.all(Radius.circular(12))),
+                      child: Text(msg!, style: const TextStyle(color: brandDeep, fontSize: 13)),
+                    ),
+                  TextField(controller: lama, decoration: const InputDecoration(labelText: 'Password lama'), obscureText: true),
+                  const SizedBox(height: 10),
+                  TextField(controller: baru, decoration: const InputDecoration(labelText: 'Password baru (min 10)'), obscureText: true),
+                  const SizedBox(height: 12),
+                  ElevatedButton(onPressed: busy ? null : ganti, child: const Text('Ganti password')),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: busy ? null : keluar,
+                icon: const Icon(Icons.logout, color: badFg),
+                label: const Text('Keluar', style: TextStyle(color: badFg)),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  side: const BorderSide(color: badFg),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
             ),
           ],
         ),

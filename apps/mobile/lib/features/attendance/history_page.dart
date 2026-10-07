@@ -4,6 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/api_client.dart';
 import '../../core/helpers.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -70,52 +72,122 @@ class _HistoryPageState extends State<HistoryPage> {
     final r = rekap;
     if (r == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final hist = (r['history'] as List?) ?? [];
+    final numPct = r['percentage'] is num ? (r['percentage'] as num).toDouble() : null;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Riwayat'),
         actions: [
-          IconButton(icon: const Icon(Icons.share), onPressed: bagikan),
+          IconButton(icon: const Icon(Icons.share_outlined), onPressed: bagikan, tooltip: 'Bagikan rekap'),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
-        child: hist.isEmpty && tugasPiket.isEmpty
-            ? ListView(children: const [Center(child: Text('Belum ada riwayat'))])
-            : ListView(
-              children: [
-                ListTile(
-                  title: Text(
-                    'Kehadiran: ${pct(r['percentage'])}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            AppCard(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 84,
+                    height: 84,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 84,
+                          height: 84,
+                          child: CircularProgressIndicator(
+                            value: numPct == null ? 0 : numPct / 100,
+                            strokeWidth: 9,
+                            backgroundColor: const Color(0xFFE8ECF4),
+                            valueColor: const AlwaysStoppedAnimation(brand),
+                            strokeCap: StrokeCap.round,
+                          ),
+                        ),
+                        Text(pct(r['percentage']), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: brandDeep)),
+                      ],
+                    ),
                   ),
-                  subtitle: Text(
-                    'Hadir ${r['present']} · Izin ${r['permitted']} · Sakit ${r['sick']} · Alpha ${r['absent']}',
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Kehadiran Efektif', style: TextStyle(fontWeight: FontWeight.bold, color: brandDeep)),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Hadir ${r['present']} · Izin ${r['permitted']} · Sakit ${r['sick']} · Alpha ${r['absent']}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                        if (piket != null) ...[
+                          const SizedBox(height: 4),
+                          Text('Piket ${piket!['attended']}/${piket!['scheduled']}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                        ],
+                      ],
+                    ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (tugasPiket.isNotEmpty) ...[
+              const SectionHead(title: 'Piket Berikutnya'),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final a in tugasPiket)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.cleaning_services_outlined, size: 18, color: brand),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text('${a['meeting']?['title']} (${wib(a['meeting']?['startAt'])})', style: const TextStyle(fontSize: 13))),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-                if (tugasPiket.isNotEmpty)
-                  ListTile(
-                    title: const Text('Piket berikut', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(tugasPiket.map((a) => '${a['meeting']?['title']} (${wib(a['meeting']?['startAt'])})').join('\n')),
-                  ),
-                if (piket != null)
-                  ListTile(
-                    title: const Text('Piket selesai'),
-                    subtitle: Text('Hadir ${piket!['attended']}/${piket!['scheduled']}'),
-                  ),
-                ...hist.map(
-                  (h) => ListTile(
-                    title: Text(h['meeting']?['title'] ?? ''),
-                    subtitle: Text(
-                      [
-                        statusLabel[h['status']] ?? h['status'],
-                        if (h['corrected'] == true)
-                          'Dikoreksi pengurus: ${h['adjustmentReason'] ?? ''}',
-                      ].join(' · '),
+              ),
+              const SizedBox(height: 16),
+            ],
+            const SectionHead(title: 'Riwayat Kehadiran'),
+            if (hist.isEmpty)
+              const AppCard(child: EmptyState(text: 'Belum ada riwayat', icon: Icons.history_outlined))
+            else
+              ...hist.map(
+                (h) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: AppCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${h['meeting']?['title'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 2),
+                              Text(
+                                [
+                                  statusLabel[h['status']] ?? h['status'],
+                                  if (h['corrected'] == true) 'Dikoreksi pengurus: ${h['adjustmentReason'] ?? ''}',
+                                ].join(' · '),
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                              ),
+                            ],
+                          ),
+                        ),
+                        StatusChip(status: '${h['status']}'),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'core/api_client.dart';
 import 'core/deeplink.dart';
 import 'core/session.dart';
+import 'core/theme.dart';
 import 'features/auth/login_page.dart';
 import 'home_shell.dart';
 
@@ -85,7 +86,7 @@ class App extends StatelessWidget {
     return MaterialApp(
       title: 'Jurnalistik APP',
       navigatorKey: navKey,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
+      theme: appTheme(),
       home: const Gate(),
       routes: {'/login': (_) => const LoginPage(), '/home': (_) => const HomeShell()},
     );

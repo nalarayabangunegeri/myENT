@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
-import '../../core/helpers.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 
 const alasan = [
   'SICK',
@@ -181,14 +182,16 @@ class _AbsencePageState extends State<AbsencePage> {
     final data = tabKlaim ? klaim : rows;
     return Scaffold(
       appBar: AppBar(title: const Text('Izin / Sakit')),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: tabKlaim ? ajukanKlaim : ajukan,
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: Text(tabKlaim ? 'Klaim' : 'Ajukan'),
       ),
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: SegmentedButton<bool>(
+            style: SegmentedButton.styleFrom(selectedBackgroundColor: brand, selectedForegroundColor: Colors.white),
             segments: const [
               ButtonSegment(value: false, label: Text('Izin')),
               ButtonSegment(value: true, label: Text('Klaim hadir')),
@@ -200,26 +203,40 @@ class _AbsencePageState extends State<AbsencePage> {
         if (err != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(err!, style: const TextStyle(color: Colors.red)),
+            child: Text(err!, style: const TextStyle(color: badFg)),
           ),
         Expanded(
           child: data.isEmpty
-              ? const Center(child: Text('Belum ada pengajuan'))
+              ? const AppCard(child: EmptyState(text: 'Belum ada pengajuan', icon: Icons.healing_outlined))
               : RefreshIndicator(
                   onRefresh: _load,
-                  child: ListView.builder(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
                     itemCount: data.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (_, i) {
                       final r = data[i];
-                      return ListTile(
-                        title: Text(
-                          tabKlaim ? '${r['claim'] ?? ''}' : '${r['reasonType']}',
-                        ),
-                        subtitle: Text(
-                          '${statusLabel[r['status']] ?? r['status']}',
-                        ),
-                        trailing: r['status'] == 'PENDING'
-                            ? TextButton(
+                      return AppCard(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    tabKlaim ? '${r['claim'] ?? ''}' : '${r['reasonType']}',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  StatusChip(status: '${r['status']}'),
+                                ],
+                              ),
+                            ),
+                            if (r['status'] == 'PENDING')
+                              TextButton(
                                 onPressed: () async {
                                   try {
                                     await Api.patch(
@@ -233,8 +250,9 @@ class _AbsencePageState extends State<AbsencePage> {
                                   }
                                 },
                                 child: const Text('Tarik'),
-                              )
-                            : null,
+                              ),
+                          ],
+                        ),
                       );
                     },
                   ),

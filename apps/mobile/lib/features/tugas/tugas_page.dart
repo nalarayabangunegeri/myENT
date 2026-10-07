@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_client.dart';
 import '../../core/helpers.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 
 class TugasPage extends StatefulWidget {
   const TugasPage({super.key});
@@ -131,7 +133,9 @@ class _TugasPageState extends State<TugasPage>
       _load();
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } finally {
       dueC.dispose();
@@ -144,7 +148,18 @@ class _TugasPageState extends State<TugasPage>
     super.dispose();
   }
 
-  Widget kosong(String s) => Center(child: Text(s));
+  Widget _list(List rows, Widget Function(dynamic) item, String empty, IconData icon) {
+    if (rows.isEmpty) return AppCard(child: EmptyState(text: empty, icon: icon));
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: rows.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (_, i) => AppCard(padding: const EdgeInsets.all(12), child: item(rows[i])),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,6 +168,10 @@ class _TugasPageState extends State<TugasPage>
         title: const Text('Tugas & Materi'),
         bottom: TabBar(
           controller: tab,
+          labelColor: brand,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: gold,
+          indicatorWeight: 3,
           tabs: const [
             Tab(text: 'Tugas'),
             Tab(text: 'Materi'),
@@ -164,84 +183,129 @@ class _TugasPageState extends State<TugasPage>
       body: TabBarView(
         controller: tab,
         children: [
-          tugas.isEmpty
-              ? kosong('Belum ada tugas')
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    itemCount: tugas.length,
-                    itemBuilder: (_, i) {
-                      final t = tugas[i];
-                      return ListTile(
-                        title: Text(t['title'] ?? ''),
-                        subtitle: Text('Deadline ${wib(t['deadline'])}'),
-                        trailing: TextButton(
-                          onPressed: () => kumpulkan(t['id']),
-                          child: const Text('Kumpul'),
-                        ),
-                      );
-                    },
+          _list(
+            tugas,
+            (t) => Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: const BoxDecoration(color: brandSoft, borderRadius: BorderRadius.all(Radius.circular(14))),
+                  child: const Icon(Icons.assignment_outlined, color: brand),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${t['title'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text('Deadline ${wib(t['deadline'])}', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    ],
                   ),
                 ),
-          materi.isEmpty
-              ? kosong('Belum ada materi')
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    itemCount: materi.length,
-                    itemBuilder: (_, i) {
-                      final m = materi[i];
-                      return ListTile(
-                        title: Text(m['title'] ?? ''),
-                        subtitle: Text(
-                          '${((m['size'] ?? 0) / 1024).toStringAsFixed(0)} KB',
-                        ),
-                        trailing: TextButton(
-                          onPressed: () => buka("/materials/${m['id']}/file"),
-                          child: const Text('Buka'),
-                        ),
-                      );
-                    },
+                TextButton(onPressed: () => kumpulkan(t['id']), child: const Text('Kumpul')),
+              ],
+            ),
+            'Belum ada tugas',
+            Icons.assignment_outlined,
+          ),
+          _list(
+            materi,
+            (m) => Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: const BoxDecoration(color: badBg, borderRadius: BorderRadius.all(Radius.circular(14))),
+                  child: const Icon(Icons.picture_as_pdf_outlined, color: badFg),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${m['title'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text('${((m['size'] ?? 0) / 1024).toStringAsFixed(0)} KB', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    ],
                   ),
                 ),
-          kumpul.isEmpty
-              ? kosong('Belum ada submission')
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    itemCount: kumpul.length,
-                    itemBuilder: (_, i) {
-                      final s = kumpul[i];
-                      return ListTile(
-                      title: Text(s['assignment']?['title'] ?? ''),
-                      subtitle: Text(
-                        '${s['status'] ?? ''} · ${wib(s['submittedAt'])}',
-                      ),
-                    );
-                  },
+                TextButton(onPressed: () => buka("/materials/${m['id']}/file"), child: const Text('Buka')),
+              ],
+            ),
+            'Belum ada materi',
+            Icons.book_outlined,
+          ),
+          _list(
+            kumpul,
+            (s) => Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${s['assignment']?['title'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(wib(s['submittedAt']), style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    ],
+                  ),
                 ),
-              ),
-          barang.isEmpty && pinjamku.isEmpty
-              ? kosong('Belum ada barang')
+                StatusChip(status: '${s['status'] ?? ''}'),
+              ],
+            ),
+            'Belum ada submission',
+            Icons.upload_file_outlined,
+          ),
+          (barang.isEmpty && pinjamku.isEmpty)
+              ? const AppCard(child: EmptyState(text: 'Belum ada barang', icon: Icons.inventory_2_outlined))
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
+                    padding: const EdgeInsets.all(16),
                     children: [
-                      const ListTile(title: Text('Katalog', style: TextStyle(fontWeight: FontWeight.bold))),
+                      const SectionHead(title: 'Katalog'),
                       ...barang.map(
-                        (b) => ListTile(
-                          title: Text('${b['code']} · ${b['name']}'),
-                          subtitle: Text('${b['condition'] ?? ''} · ${b['status']}'),
-                          trailing: b['status'] == 'AVAILABLE'
-                              ? TextButton(onPressed: () => pinjam(b), child: const Text('Pinjam'))
-                              : null,
+                        (b) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: AppCard(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('${b['code']} · ${b['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      Text('${b['condition'] ?? ''} · ${b['status']}', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                    ],
+                                  ),
+                                ),
+                                if (b['status'] == 'AVAILABLE')
+                                  TextButton(onPressed: () => pinjam(b), child: const Text('Pinjam')),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                      const ListTile(title: Text('Pinjamanku', style: TextStyle(fontWeight: FontWeight.bold))),
+                      const SectionHead(title: 'Pinjamanku'),
                       ...pinjamku.map(
-                        (l) => ListTile(
-                          title: Text('${l['item']?['code']}'),
-                          subtitle: Text('${l['status']} · kembali ${wib(l['dueAt'])}'),
+                        (l) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: AppCard(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('${l['item']?['code']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      Text('kembali ${wib(l['dueAt'])}', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                    ],
+                                  ),
+                                ),
+                                StatusChip(status: '${l['status']}'),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],

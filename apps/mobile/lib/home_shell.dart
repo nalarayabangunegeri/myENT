@@ -15,22 +15,31 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   late int i = widget.initialTab;
-  final pages = const [MeetingsPage(), TugasPage(), HistoryPage(), AbsencePage(), NotifPage(), ProfilePage()];
+
+  void _go(int v) => setState(() => i = v);
+
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      MeetingsPage(onGo: _go),
+      const TugasPage(),
+      const HistoryPage(),
+      const AbsencePage(),
+      const NotifPage(),
+      const ProfilePage(),
+    ];
     return Scaffold(
       body: pages[i],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: i,
-        type: BottomNavigationBarType.fixed,
-        onTap: (v) => setState(() => i = v),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.event), label: 'Kegiatan'),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: 'Tugas'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Riwayat'),
-          BottomNavigationBarItem(icon: Icon(Icons.healing), label: 'Izin'),
-          BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Notif'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: i,
+        onDestinationSelected: _go,
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.event_outlined), selectedIcon: Icon(Icons.event), label: 'Kegiatan'),
+          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: 'Tugas'),
+          NavigationDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history), label: 'Riwayat'),
+          NavigationDestination(icon: Icon(Icons.healing_outlined), selectedIcon: Icon(Icons.healing), label: 'Izin'),
+          NavigationDestination(icon: Icon(Icons.notifications_outlined), selectedIcon: Icon(Icons.notifications), label: 'Notif'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profil'),
         ],
       ),
     );

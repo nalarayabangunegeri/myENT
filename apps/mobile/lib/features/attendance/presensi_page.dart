@@ -6,6 +6,8 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../core/api_client.dart';
 import '../../core/helpers.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 
 // Alur singkat (AGENTS §14): Kegiatan → Kamera → Preview → Submit → Sukses.
 // Kamera langsung (bukan galeri), kompres sebelum upload, foto lokal disimpan sampai sukses.
@@ -199,20 +201,62 @@ class _PresensiPageState extends State<PresensiPage> {
     final ok = status == 'Berhasil tercatat';
     return Scaffold(
       appBar: AppBar(title: Text(widget.meeting['title'] ?? 'Presensi')),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(children: [
-          if (foto != null) Image.file(foto!, height: 280) else const Text('Belum ada foto'),
-          const SizedBox(height: 8),
-          if (!ok) ElevatedButton(onPressed: jepret, child: const Text('Kamera')),
-          const SizedBox(height: 8),
-          if (foto != null && !ok) ElevatedButton(onPressed: kirim ? null : submit, child: const Text('Submit')),
-          if (status != null) ...[
+        children: [
+          AppCard(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: foto != null
+                      ? Image.file(foto!, height: 280, fit: BoxFit.cover)
+                      : Container(
+                          height: 200,
+                          color: brandSoft,
+                          child: const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.camera_alt_outlined, size: 44, color: brand),
+                              SizedBox(height: 8),
+                              Text('Belum ada foto', style: TextStyle(color: brand)),
+                            ],
+                          ),
+                        ),
+                ),
+                if (status != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: ok ? okBg : brandSoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(ok ? Icons.check_circle : Icons.info_outline, color: ok ? okFg : brand, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(status!, style: TextStyle(color: ok ? okFg : brandDeep, fontWeight: FontWeight.w600, fontSize: 13))),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (!ok) ElevatedButton.icon(onPressed: jepret, icon: const Icon(Icons.camera_alt_outlined), label: const Text('Ambil Foto')),
+          if (foto != null && !ok) ...[
             const SizedBox(height: 8),
-            Text(status!, style: TextStyle(color: ok ? Colors.green : null)),
-            if (ok) ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Selesai')),
+            ElevatedButton.icon(onPressed: kirim ? null : submit, icon: const Icon(Icons.cloud_upload_outlined), label: const Text('Submit Presensi')),
           ],
-        ]),
+          if (ok) ...[
+            const SizedBox(height: 8),
+            ElevatedButton.icon(onPressed: () => Navigator.pop(context, true), icon: const Icon(Icons.check), label: const Text('Selesai')),
+          ],
+        ],
       ),
     );
   }

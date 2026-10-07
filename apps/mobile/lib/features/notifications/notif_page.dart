@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
+import '../../core/theme.dart';
+import '../../core/widgets.dart';
 
 class NotifPage extends StatefulWidget {
   const NotifPage({super.key});
@@ -34,47 +36,71 @@ class _NotifPageState extends State<NotifPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (err != null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Notifikasi')),
-        body: Center(child: Text(err!, semanticsLabel: 'Gagal memuat notifikasi')),
-      );
-    }
-    if (rows.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Notifikasi')),
-        body: const Center(child: Text('Belum ada notifikasi')),
-      );
-    }
     return Scaffold(
       appBar: AppBar(title: const Text('Notifikasi')),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView.builder(
-          itemCount: rows.length,
-          itemBuilder: (_, i) {
-            final n = rows[i];
-            final unread = n['readAt'] == null;
-            return Semantics(
-              button: true,
-              label: unread ? 'Belum dibaca: ${n['title']}' : '${n['title']}',
-              child: ListTile(
-                title: Text(n['title'] ?? '', style: TextStyle(fontWeight: unread ? FontWeight.bold : null)),
-                subtitle: Text(n['body'] ?? ''),
-                trailing: unread ? const Icon(Icons.circle, size: 10, semanticLabel: 'Baru') : null,
-                onTap: () async {
-                  if (unread) {
-                    try {
-                      await Api.patch("/notifications/${n['id']}/read");
-                      _load();
-                    } catch (_) {}
-                  }
-                },
-              ),
-            );
-          },
-        ),
-      ),
+      body: err != null
+          ? Center(child: Text(err!, semanticsLabel: 'Gagal memuat notifikasi'))
+          : rows.isEmpty
+              ? const AppCard(child: EmptyState(text: 'Belum ada notifikasi', icon: Icons.notifications_outlined))
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: rows.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) {
+                      final n = rows[i];
+                      final unread = n['readAt'] == null;
+                      return Semantics(
+                        button: true,
+                        label: unread ? 'Belum dibaca: ${n['title']}' : '${n['title']}',
+                        child: AppCard(
+                          padding: const EdgeInsets.all(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () async {
+                              if (unread) {
+                                try {
+                                  await Api.patch("/notifications/${n['id']}/read");
+                                  _load();
+                                } catch (_) {}
+                              }
+                            },
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: unread ? goldSoft : brandSoft,
+                                    borderRadius: const BorderRadius.all(Radius.circular(14)),
+                                  ),
+                                  child: Icon(Icons.notifications_outlined, color: unread ? warnFg : brand),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${n['title'] ?? ''}',
+                                        style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.w600, color: brandDeep),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text('${n['body'] ?? ''}', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                                    ],
+                                  ),
+                                ),
+                                if (unread) const Padding(padding: EdgeInsets.only(top: 6), child: Icon(Icons.circle, size: 10, color: gold)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }
