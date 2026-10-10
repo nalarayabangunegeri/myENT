@@ -144,6 +144,7 @@ model AbsenceRequest {
   updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
   // BR-18: satu aktif per user per meeting — partial unique via migration SQL (Prisma tak mendukung).
+  // JANGAN hapus indeks absence_requests_one_active saat review migration (migrate dev mengusulkan DROP).
   @@index([userId, meetingId])
   @@index([status])
   @@map("absence_requests")
@@ -168,10 +169,11 @@ model CorrectionRequest {
   createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
+  // Satu klaim aktif per user per meeting — partial unique via migration SQL.
+  // JANGAN hapus indeks correction_requests_one_active saat review migration.
   @@index([userId, meetingId])
   @@map("correction_requests")
 }
-
 enum ItemStatus {
   AVAILABLE
   BORROWED
@@ -240,6 +242,8 @@ model Loan {
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
   // Satu pinjam aktif per barang (tak bisa dipinjam 2 orang).
+  // Partial unique via migration SQL (Prisma tak mendukung) — JANGAN hapus
+  // indeks loans_one_active_per_item saat review migration (migrate dev mengusulkan DROP).
   @@index([itemId])
   @@index([borrowerId])
   @@index([status])

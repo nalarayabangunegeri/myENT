@@ -1,9 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { generateSecret, keyuri, verifyTotp } from './totp';
 import { openTotpSecret, protectTotpSecret } from './totp-crypto';
+import { canManageMember } from '../common/policy';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -145,10 +146,15 @@ export class AuthService {
     return { ok: true };
   }
 
-  async resetPassword(actorId: string, targetId: string) {    const temp = randomBytes(9).toString('base64url'); // ~12 char, sekali tampil — PRD §6.2
+  async resetPassword(actor: { id: string; role: string; division: string }, targetId: string) {    const temp = randomBytes(9).toString('base64url'); // ~12 char, sekali tampil — PRD §6.2
     const passwordHash = await bcrypt.hash(temp, 10);
     await this.prisma.$transaction(async (tx: any) => {
       const before = await tx.user.findUniqueOrThrow({ where: { id: targetId } });
+      // Anti-eskalasi: ADMIN hanya oleh ADMIN; officer hanya se-divisi (diri sendiri boleh).
+      if (before.role === 'ADMIN' && actor.role !== 'ADMIN')
+        throw new ForbiddenException('Hanya ADMIN dapat mereset ADMIN');
+      if (actor.id !== before.id && !canManageMember(actor as any, before as any))
+        throw new ForbiddenException('Di luar divisi Anda');
       await tx.user.update({
         where: { id: targetId },
         data: { passwordHash, mustChangePassword: true },
@@ -156,7 +162,7 @@ export class AuthService {
       await tx.session.updateMany({ where: { userId: targetId }, data: { revokedAt: new Date() } });
       await this.audit.log(
         {
-          actorId,
+          actorId: actor.id,
           action: 'user.reset-password',
           entity: 'User',
           entityId: targetId,

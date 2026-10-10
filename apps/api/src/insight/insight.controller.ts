@@ -20,20 +20,20 @@ export class InsightController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('dashboard')
-  dashboard() {
-    return this.insight.dashboard();
+  dashboard(@Req() req: any) {
+    return this.insight.dashboard(req.user);
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('points/leaderboard')
-  leaderboard() {
-    return this.insight.leaderboard();
+  leaderboard(@Req() req: any) {
+    return this.insight.leaderboard(req.user);
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get('points/me')
   myPoints(@Req() req: any) {
-    return this.insight.myPoints(req.user.id);
+    return this.insight.myPoints(req.user.id, req.user);
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
@@ -62,22 +62,22 @@ export class InsightController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('analytics/trends')
-  trends(@Query('months') months?: string) {
+  trends(@Req() req: any, @Query('months') months?: string) {
     const n = Number(months ?? 6);
     const m = Math.min(Math.max(Number.isFinite(n) ? n : 6, 1), 24);
-    return this.insight.trends(m);
+    return this.insight.trends(m, req.user);
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('analytics/frequent-absentees')
-  absentees(@Query('limit') limit?: string) {
+  absentees(@Req() req: any, @Query('limit') limit?: string) {
     const n = Number(limit ?? 10);
-    return this.insight.frequentAbsentees(Math.min(Math.max(Number.isFinite(n) ? Math.floor(n) : 10, 1), 50));
+    return this.insight.frequentAbsentees(Math.min(Math.max(Number.isFinite(n) ? Math.floor(n) : 10, 1), 50), req.user);
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('analytics/by-division')
-  byDivision() {
-    return this.insight.byDivision();
+  byDivision(@Req() req: any) {
+    return this.insight.byDivision(req.user);
   }
 }

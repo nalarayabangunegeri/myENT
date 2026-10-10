@@ -8,7 +8,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { assertSelfWindow, detectImage, selfieKey } from './attendance.rules';
 import { assertInside } from './location';
-import { canManageMember } from '../common/policy';
+import { canManageMember, divisionScope } from '../common/policy';
 import { AttendanceStatsService } from './attendance-stats.service';
 
 @Injectable()
@@ -191,14 +191,18 @@ export class AttendanceService {
   }
 
   // Rekap pengurus (PRD §14.4): search + sort di server + pagination.
+  // OFFICER hanya divisinya (PRD §22.3); ADMIN global.
   // ponytail: agregasi in-memory (skala UKM). Ceiling: pindah ke GROUP BY + window function saat ribuan baris.
-  async recapAll(search: string | undefined, sortBy: string, order: 'asc' | 'desc', page: number, limit: number, from?: Date, to?: Date) {
+  async recapAll(actor: { role: string; division: string }, search: string | undefined, sortBy: string, order: 'asc' | 'desc', page: number, limit: number, from?: Date, to?: Date) {
     const allowed = ['name', 'present', 'permitted', 'sick', 'dispensation', 'absent', 'percentage'];
     if (!allowed.includes(sortBy)) throw new BadRequestException('Kolom sort tidak diizinkan');
     const users = await this.prisma.user.findMany({
-      where: search
-        ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { nim: { contains: search, mode: 'insensitive' } }] }
-        : {},
+      where: {
+        ...divisionScope(actor),
+        ...(search
+          ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { nim: { contains: search, mode: 'insensitive' } }] }
+          : {}),
+      },
       select: { id: true, nim: true, name: true, division: true, cohortYear: true, status: true },
       orderBy: { name: 'asc' },
     });

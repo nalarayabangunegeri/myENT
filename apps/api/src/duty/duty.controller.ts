@@ -42,12 +42,12 @@ export class DutyController {
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get('duty/summary/me')
   mySummary(@Req() req: any) {
-    return this.duty.summary(req.user.id);
+    return this.duty.summary(req.user, req.user.id);
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('duty/summary')
-  summary(@Query('userId', ParseUUIDPipe) userId: string) {
-    return this.duty.summary(userId);
+  summary(@Req() req: any, @Query('userId', ParseUUIDPipe) userId: string) {
+    return this.duty.summary(req.user, userId);
   }
 }

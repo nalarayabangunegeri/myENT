@@ -105,16 +105,16 @@ export class AttendanceController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('attendance/recap')
-  recap(@Query() q: RecapQuery) {
+  recap(@Req() req: any, @Query() q: RecapQuery) {
     return this.attendance.recapAll(
-      q.search, q.sortBy ?? 'name', q.order ?? 'asc', q.page ?? 1, Math.min(q.limit ?? 20, 100), q.from, q.to,
+      req.user, q.search, q.sortBy ?? 'name', q.order ?? 'asc', q.page ?? 1, Math.min(q.limit ?? 20, 100), q.from, q.to,
     );
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('attendance/recap/export.xlsx')
-  async recapXlsx(@Query() q: RecapQuery, @Res({ passthrough: true }) res: Response) {
-    const r = await this.attendance.recapAll(undefined, 'name', 'asc', 1, 5000, q.from, q.to);
+  async recapXlsx(@Req() req: any, @Query() q: RecapQuery, @Res({ passthrough: true }) res: Response) {
+    const r = await this.attendance.recapAll(req.user, undefined, 'name', 'asc', 1, 5000, q.from, q.to);
     const buf = await toXlsx(
       ['Nama', 'NIM', 'Divisi', 'Hadir', 'Izin', 'Sakit', 'Dispensasi', 'Alpha', 'Persentase'],
       r.data.map((x: any) => [x.user.name, x.user.nim, x.user.division, x.present, x.permitted, x.sick, x.dispensation, x.absent, x.percentage ?? '–']),

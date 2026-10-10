@@ -181,22 +181,6 @@ export class MeetingsService {
     return { qr: await QRCode.toDataURL(token), expiresAt: new Date(exp) };
   }
 
-  // Cegah tick ganda multi-instance via advisory lock (AGENTS §12).
-  // Session-level lock di pool = tidak andal (lock/unlock bisa beda koneksi),
-  // jadi dipertahankan hanya sebagai wrapper deprecated. Lock yang benar ada
-  // di tick() via pg_try_advisory_xact_lock dalam transaksi yang sama.
-  /** @deprecated pakai tick() yang self-locking */
-  async tryTickLock(): Promise<boolean> {
-    const r = (await this.prisma.$queryRawUnsafe(
-      `SELECT pg_try_advisory_lock(hashtext('meeting-tick')) AS ok`,
-    ).catch(() => [{ ok: false }])) as any[];
-    return !!r[0]?.ok;
-  }
-
-  async unlockTick() {
-    await this.prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(hashtext('meeting-tick'))`).catch(() => {});
-  }
-
   // Satu tick transisi + finalisasi + reminder; idempotent via WHERE (AGENTS §12).
   // Transaction-level lock mencakup SEMUA langkah (KURANG.md §1): instance yang
   // kalah → { skipped: true } sebelum menyentuh apa pun. Broadcast keluar setelah commit.

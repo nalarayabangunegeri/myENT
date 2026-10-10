@@ -272,7 +272,9 @@ POST   /absence-requests/bulk-approve   # P1; hasil per item
     (contoh: approve request = update request + upsert attendance + audit).
 -   Timestamp disimpan **UTC**; frontend mengonversi ke `Asia/Jakarta`.
     Jangan memakai waktu device sebagai sumber kebenaran presensi.
--   Review file migration sebelum merge.
+-   Review file migration sebelum merge. Indeks partial-unique
+    (`*_one_active*`, hanya ada di SQL migration) JANGAN di-DROP:
+    `migrate dev` mengusulkannya karena tak ada di schema — tolak usulan itu.
 
 ---
 

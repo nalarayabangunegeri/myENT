@@ -7,19 +7,35 @@ import { badges, streaks } from './points.rules';
 export class InsightService {
   constructor(private prisma: PrismaService, private stats: AttendanceStatsService) {}
 
-  async dashboard() {
+  // Scope baca (PRD §22.3): hanya OFFICER yang difilter ke divisinya;
+  // ADMIN/MEMBER tetap global (member tak memegang cakupan divisi).
+  private async scopeIds(actor?: { role: string; division: string }) {
+    if (!actor || actor.role !== 'OFFICER') return undefined;
+    return (
+      await this.prisma.user.findMany({
+        where: { status: 'ACTIVE', division: actor.division },
+        select: { id: true },
+      })
+    ).map((u) => u.id);
+  }
+
+  async dashboard(actor?: { role: string; division: string }) {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
+    const ids = await this.scopeIds(actor);
+    const inScope = ids ? { id: { in: ids } } : {};
+    const inScopeUser = ids ? { userId: { in: ids } } : {};
     const [members, active, meetings, assignments, pending, att] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.user.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.user.count({ where: inScope }),
+      this.prisma.user.count({ where: { status: 'ACTIVE', ...inScope } }),
       this.prisma.meeting.count({ where: { deletedAt: null } }),
       this.prisma.assignment.count({ where: { deadline: { gte: new Date() } } }),
-      this.prisma.absenceRequest.count({ where: { status: 'PENDING' } }),
+      this.prisma.absenceRequest.count({ where: { status: 'PENDING', ...inScopeUser } }),
       this.prisma.attendance.groupBy({
         by: ['status'],
         where: {
+          ...inScopeUser,
           submittedAt: { gte: monthStart },
           meeting: { deletedAt: null, finalizedAt: { not: null }, status: { not: 'CANCELLED' }, isDuty: false },
         },
@@ -57,18 +73,20 @@ export class InsightService {
   }
 
   // Poin keaktifan P2 (contoh PRD §22.2): hadir +10, tugas +10, alpha −5. Dihitung saat dibaca.
-  async leaderboard() {
+  // OFFICER: papan divisi (rank dalam divisi); ADMIN/MEMBER: global.
+  async leaderboard(actor?: { role: string; division: string }) {
+    const ids = await this.scopeIds(actor);
     const users = await this.prisma.user.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', ...(ids ? { id: { in: ids } } : {}) },
       select: { id: true, nim: true, name: true },
       orderBy: { name: 'asc' },
     });
-    const ids = users.map((u) => u.id);
+    const uids = users.map((u) => u.id);
     const fin: any = { finalizedAt: { not: null }, status: { not: 'CANCELLED' }, deletedAt: null, isDuty: false };
     const [present, absent, subs] = await Promise.all([
-      this.prisma.attendance.groupBy({ by: ['userId'], where: { userId: { in: ids }, status: 'PRESENT', meeting: fin }, _count: true }),
-      this.prisma.attendance.groupBy({ by: ['userId'], where: { userId: { in: ids }, status: 'ABSENT', meeting: fin }, _count: true }),
-      this.prisma.submission.groupBy({ by: ['userId'], where: { userId: { in: ids } }, _count: true }),
+      this.prisma.attendance.groupBy({ by: ['userId'], where: { userId: { in: uids }, status: 'PRESENT', meeting: fin }, _count: true }),
+      this.prisma.attendance.groupBy({ by: ['userId'], where: { userId: { in: uids }, status: 'ABSENT', meeting: fin }, _count: true }),
+      this.prisma.submission.groupBy({ by: ['userId'], where: { userId: { in: uids } }, _count: true }),
     ]);
     const n = (rows: { userId: string; _count: any }[], id: string) =>
       Number(rows.find((r) => r.userId === id)?._count ?? 0);
@@ -77,8 +95,8 @@ export class InsightService {
       .sort((a, b) => b.points - a.points);
   }
 
-  async myPoints(userId: string) {
-    const board = await this.leaderboard();
+  async myPoints(userId: string, actor?: { role: string; division: string }) {
+    const board = await this.leaderboard(actor);
     const rank = board.findIndex((r) => r.user.id === userId) + 1;
     const rows = await this.prisma.attendance.findMany({
       where: {
@@ -114,11 +132,13 @@ export class InsightService {
   }
 
   // Analitik lanjutan, dihitung saat dibaca (backlog §22.3).
-  async trends(months = 6) {
+  async trends(months = 6, actor?: { role: string; division: string }) {
     const from = new Date();
     from.setUTCMonth(from.getUTCMonth() - months, 1);
     from.setUTCHours(0, 0, 0, 0);
+    const ids = await this.scopeIds(actor);
     const where: any = {
+      ...(ids ? { userId: { in: ids } } : {}),
       submittedAt: { gte: from },
       meeting: { finalizedAt: { not: null }, status: { not: 'CANCELLED' }, deletedAt: null, isDuty: false },
     };
@@ -149,10 +169,14 @@ export class InsightService {
     };
   }
 
-  async frequentAbsentees(limit = 10) {
+  async frequentAbsentees(limit = 10, actor?: { role: string; division: string }) {
+    const ids = await this.scopeIds(actor);
     const groups = await this.prisma.attendance.groupBy({
       by: ['userId'],
-      where: { status: 'ABSENT', meeting: { finalizedAt: { not: null }, deletedAt: null, isDuty: false } },
+      where: {
+        ...(ids ? { userId: { in: ids } } : {}),
+        status: 'ABSENT', meeting: { finalizedAt: { not: null }, deletedAt: null, isDuty: false },
+      },
       _count: true,
       orderBy: { _count: { userId: 'desc' } },
       take: Math.min(limit, 50),
@@ -165,9 +189,9 @@ export class InsightService {
     return groups.map((g) => ({ user: map.get(g.userId), alphas: Number(g._count) }));
   }
 
-  async byDivision() {
+  async byDivision(actor?: { role: string; division: string }) {
     const users = await this.prisma.user.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', ...(actor?.role === 'OFFICER' ? { division: actor.division } : {}) },
       select: { id: true, division: true },
     });
     const groups = await this.prisma.attendance.groupBy({

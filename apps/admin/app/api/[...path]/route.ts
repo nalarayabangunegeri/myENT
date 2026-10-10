@@ -1,18 +1,12 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { API, originOk } from '@/lib/auth';
+import { pathAllowed } from '@/lib/allowlist';
 import { RefreshCoalescer } from '@/lib/refresh-coalescer';
 
 // Proxy umum ke API: token dari cookie httpOnly, refresh diam-diam saat 401.
 // Coalescing per refresh-token: sesi A tak memengaruhi sesi B (KURANG.md §7).
 const coalescer = new RefreshCoalescer();
-// Segmen pertama path backend yang boleh diproxy — bukan open proxy.
-const ALLOWED = new Set([
-  'auth', 'users', 'meetings', 'attendance', 'absence-requests', 'corrections',
-  'items', 'loans', 'materials', 'assignments', 'submissions', 'duty',
-  'points', 'analytics', 'calendar', 'calendar.ics', 'dashboard',
-  'audit-logs', 'notifications', 'config',
-]);
 const MAX_BODY = 12 * 1024 * 1024;
 function doRefresh(refreshToken: string): Promise<boolean> {
   return coalescer.run(refreshToken, () => {
@@ -34,9 +28,8 @@ function doRefresh(refreshToken: string): Promise<boolean> {
       .finally(() => clearTimeout(t));
   });
 }
-async function forward(req: NextRequest, path: string, retry = true): Promise<Response> {
-  const segs = path.split('/').filter(Boolean);
-  if (!segs.length || !ALLOWED.has(segs[0]) || segs.some((s) => s === '..' || s.includes('\0')))
+async function forward(req: NextRequest, path: string, retry = true, buf?: Buffer): Promise<Response> {
+  if (!pathAllowed(path))
     return NextResponse.json({ message: 'Tidak ditemukan' }, { status: 404 });
   const c = await cookies();
   const access = c.get('access')?.value;
@@ -46,18 +39,20 @@ async function forward(req: NextRequest, path: string, retry = true): Promise<Re
   const ct = req.headers.get('content-type') ?? '';
   if (ct) headers['content-type'] = ct; // teruskan boundary multipart apa adanya
   const init: RequestInit = { method: req.method, headers };
+  // Buffer SEKALI lalu teruskan ke retry: baca ulang meledak (Body is unusable).
   if (!['GET', 'HEAD'].includes(req.method)) {
     // Buffer dulu lalu batasi: cek content-length saja lolos via chunked.
-    const buf = Buffer.from(await req.arrayBuffer());
-    if (buf.byteLength > MAX_BODY) return NextResponse.json({ message: 'File terlalu besar' }, { status: 413 });
-    init.body = buf;
+    const body = buf ?? Buffer.from(await req.arrayBuffer());
+    if (body.byteLength > MAX_BODY) return NextResponse.json({ message: 'File terlalu besar' }, { status: 413 });
+    init.body = new Blob([body as any]);
+    buf = body;
   }
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 30_000);
   try {
     let r = await fetch(url, { ...init, signal: ctl.signal });
     if (r.status === 401 && retry && c.get('refresh')?.value) {
-      if (await doRefresh(c.get('refresh')!.value)) return forward(req, path, false);
+      if (await doRefresh(c.get('refresh')!.value)) return forward(req, path, false, buf);
     }
     // Produksi: 5xx backend jangan diteruskan mentah (bisa memuat detail internal).
     if (r.status >= 500 && process.env.NODE_ENV === 'production')

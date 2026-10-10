@@ -57,8 +57,8 @@ export class AssignmentsController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('assignments/:id/submissions')
-  byAssignment(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
-    return this.assignments.listSubmissions(id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
+  byAssignment(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
+    return this.assignments.listSubmissions(req.user, id, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('OFFICER', 'ADMIN')

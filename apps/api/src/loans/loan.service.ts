@@ -7,7 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
 import { sanitizeImage } from '../storage/sanitize';
-import { canManageMember } from '../common/policy';
+import { canManageMember, divisionScope } from '../common/policy';
 
 @Injectable()
 export class LoanService {
@@ -174,8 +174,11 @@ export class LoanService {
     return { page, limit, total, data };
   }
 
-  async list(status?: string, page = 1, limit = 20) {
-    const where = status ? { status: status as any } : {};
+  async list(actor: { role: string; division: string }, status?: string, page = 1, limit = 20) {
+    const where: any = {
+      ...divisionScope(actor, 'borrower'),
+      ...(status ? { status: status as any } : {}),
+    };
     const [total, data] = await Promise.all([
       this.prisma.loan.count({ where }),
       this.prisma.loan.findMany({

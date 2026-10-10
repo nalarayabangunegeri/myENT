@@ -8,7 +8,7 @@ import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
 import { isPdf } from '../materials/materials.service';
 import { assertPdf, sanitizeImage } from '../storage/sanitize';
-import { canManageMember } from '../common/policy';
+import { canManageMember, divisionScope } from '../common/policy';
 
 // Status submission diturunkan (PRD §15.3): REVIEWED > LATE > SUBMITTED (tanpa record = NOT_SUBMITTED).
 export function submissionStatus(s: { submittedAt: Date; reviewedAt: Date | null }, deadline: Date) {
@@ -128,8 +128,8 @@ export class AssignmentsService {
     };
   }
 
-  async listSubmissions(assignmentId: string, page: number, limit: number) {
-    const where = { assignmentId };
+  async listSubmissions(actor: { role: string; division: string }, assignmentId: string, page: number, limit: number) {
+    const where: any = { assignmentId, ...divisionScope(actor, 'user') };
     const [total, subs] = await Promise.all([
       this.prisma.submission.count({ where }),
       this.prisma.submission.findMany({

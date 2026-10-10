@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -25,20 +25,31 @@ export class AuditController {
   constructor(private prisma: PrismaService) {}
 
   @Get()
-  async list(@Query() q: AuditQuery) {
+  async list(@Req() req: any, @Query() q: AuditQuery) {
     const page = q.page ?? 1;
     const limit = Math.min(q.limit ?? 20, 100);
     const badDate = (s?: string) => s !== undefined && isNaN(Date.parse(s));
     if (badDate(q.from) || badDate(q.to)) throw new BadRequestException('Tanggal tidak valid');
-    const where: any = {};
-    if (q.actor) where.actorId = q.actor;
-    if (q.action) where.action = q.action;
-    if (q.entity) where.entity = q.entity;
-    if (q.from || q.to)
-      where.createdAt = {
-        ...(q.from ? { gte: new Date(q.from) } : {}),
-        ...(q.to ? { lte: new Date(q.to) } : {}),
-      };
+    // OFFICER: hanya aksi oleh divisinya (+ aksi sistem tanpa aktor); ADMIN global (PRD §22.3).
+    const scope = req.user.role === 'ADMIN' ? {} : { OR: [{ actor: { division: req.user.division } }, { actorId: null }] };
+    const where: any = {
+      AND: [
+        scope,
+        {
+          ...(q.actor ? { actorId: q.actor } : {}),
+          ...(q.action ? { action: q.action } : {}),
+          ...(q.entity ? { entity: q.entity } : {}),
+          ...((q.from || q.to)
+            ? {
+                createdAt: {
+                  ...(q.from ? { gte: new Date(q.from) } : {}),
+                  ...(q.to ? { lte: new Date(q.to) } : {}),
+                },
+              }
+            : {}),
+        },
+      ],
+    };
     const [total, data] = await Promise.all([
       this.prisma.auditLog.count({ where }),
       this.prisma.auditLog.findMany({

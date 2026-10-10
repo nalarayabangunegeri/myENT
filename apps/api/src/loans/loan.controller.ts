@@ -86,8 +86,8 @@ export class LoanController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('loans')
-  all(@Query() q: PageQuery & { status?: string }) {
-    return this.loans.list(q.status, q.page ?? 1, Math.min(q.limit ?? 20, 100));
+  all(@Req() req: any, @Query() q: PageQuery & { status?: string }) {
+    return this.loans.list(req.user, q.status, q.page ?? 1, Math.min(q.limit ?? 20, 100));
   }
 
   @Roles('OFFICER', 'ADMIN')

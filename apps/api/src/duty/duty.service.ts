@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { canManageMember } from '../common/policy';
 
 // Piket = meeting khusus (reuse presensi); roster giliran otomatis, anak selalu DRAFT.
 @Injectable()
@@ -82,7 +83,13 @@ export class DutyService {
     });
   }
 
-  async summary(userId: string) {
+  async summary(actor: { id: string; role: string; division: string }, userId: string) {
+    // OFFICER hanya ringkasan divisinya (PRD §22.3); diri sendiri + ADMIN bebas.
+    if (actor.role === 'OFFICER' && actor.id !== userId) {
+      const target = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, division: true } });
+      if (!target || !canManageMember(actor as any, target as any))
+        throw new ForbiddenException('Di luar divisi Anda');
+    }
     const sched = await this.prisma.dutyAssignment.findMany({
       where: { userId, meeting: { deletedAt: null, finalizedAt: { not: null }, status: { not: 'CANCELLED' } } },
       select: { meetingId: true },

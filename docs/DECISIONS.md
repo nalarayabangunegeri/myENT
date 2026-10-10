@@ -171,3 +171,15 @@
 - Prisma generator baru (`prisma-client`, output `src/generated/`, gitignored); `@prisma/client`
   dipertahankan untuk runtime engine. Overrides: postcss/uuid/deepmerge-ts/mysql2;
   sisa braces+sprintf-js tanpa fix upstream (dev-only, diterima).
+
+## Scope divisi seragam di jalur baca (2026-10-10)
+- Temuan: `canManageMember` hanya di jalur tulis; recap/audit/loans/submissions/duty-summary/analytics
+  global untuk OFFICER. Keputusan (default paling aman, AGENTS §1.3): OFFICER difilter ke divisinya
+  di SEMUA list/rekap via `divisionScope()` (`policy.ts`) — recap, audit (aksi divisinya + sistem),
+  loans (borrower), submissions, duty-summary (cek target), insight (papan/rank dalam divisi).
+  ADMIN tetap global; MEMBER tak berubah. Leaderboard officer = rank divisi (terdokumentasi di kode).
+- Dead code dihapus: `can()` + `policy.spec.ts` (matriks policy yang tak pernah ditegakkan —
+  test-nya memberi rasa aman palsu), `autoStatus()` + blok spec-nya (produksi pakai updateMany
+  di tick), `tryTickLock()/unlockTick()` (@deprecated, nol caller; lock benar = xact di tick).
+- BFF allowlist pindah ke `lib/allowlist.ts` + `allowlist.test.ts` (regresi announcements
+  tak terulang); forward buffer body sekali (retry tak baca ulang).

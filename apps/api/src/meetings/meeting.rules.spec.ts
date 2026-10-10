@@ -1,4 +1,4 @@
-import { assertManualCancel, assertWindow, autoStatus, duplicateTimes } from './meeting.rules';
+import { assertManualCancel, assertWindow, duplicateTimes } from './meeting.rules';
 import { DAY_MS } from './meetings.service';
 
 describe('meeting.rules — PRD §8', () => {
@@ -20,13 +20,6 @@ describe('meeting.rules — PRD §8', () => {
     expect(() => assertManualCancel('COMPLETED', false)).toThrow('Hanya ADMIN');
     expect(() => assertManualCancel('COMPLETED', true)).not.toThrow();
     expect(() => assertManualCancel('CANCELLED', true)).toThrow();
-  });
-
-  it('job otomatis PUBLISHED→ONGOING→COMPLETED', () => {
-    const t0 = new Date('2026-10-10T02:00:00Z');
-    expect(autoStatus({ status: 'PUBLISHED', startAt: w.startAt, endAt: w.endAt }, t0)).toBe('ONGOING');
-    expect(autoStatus({ status: 'ONGOING', startAt: w.startAt, endAt: w.endAt }, new Date('2026-10-10T04:00:00Z'))).toBe('COMPLETED');
-    expect(autoStatus({ status: 'DRAFT', startAt: w.startAt, endAt: w.endAt }, t0)).toBeNull();
   });
 
   it('duplikasi menggeser window relatif start', () => {

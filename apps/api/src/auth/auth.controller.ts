@@ -98,6 +98,6 @@ export class AuthController {
   @Roles('OFFICER', 'ADMIN')
   @Post('reset-password')
   reset(@Req() req: any, @Body() dto: ResetPasswordDto) {
-    return this.auth.resetPassword(req.user.id, dto.userId);
+    return this.auth.resetPassword(req.user, dto.userId);
   }
 }

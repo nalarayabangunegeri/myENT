@@ -60,6 +60,12 @@ export class UsersController {
       const { ForbiddenException } = await import('@nestjs/common');
       throw new ForbiddenException('Hanya ADMIN dapat membuat ADMIN');
     }
+    if (req.user.role !== 'ADMIN' && dto.role && dto.role !== 'MEMBER') {
+      const { ForbiddenException } = await import('@nestjs/common');
+      throw new ForbiddenException('Hanya ADMIN dapat membuat OFFICER');
+    }
+    // Officer menambah ke divisinya sendiri (tanpa ini member yatim di luar scope).
+    const division = req.user.role === 'ADMIN' ? (dto.division ?? '') : req.user.division;
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.$transaction(async (tx: any) => {
       const u = await tx.user.create({
@@ -68,7 +74,7 @@ export class UsersController {
           name: dto.name,
           passwordHash,
           role: (dto.role as any) ?? 'MEMBER',
-          division: dto.division ?? '',
+          division,
           email: dto.email ?? null,
           cohortYear: dto.cohortYear ?? 0,
         },
@@ -122,9 +128,15 @@ export class UsersController {
       const { ForbiddenException } = await import('@nestjs/common');
       throw new ForbiddenException('Di luar divisi Anda');
     }
-    if ((dto.role === 'ADMIN' || target.role === 'ADMIN') && req.user.role !== 'ADMIN') {
+    // Role hanya oleh ADMIN (tutup promote member→officer oleh officer).
+    if (dto.role !== undefined && dto.role !== target.role && req.user.role !== 'ADMIN') {
       const { ForbiddenException } = await import('@nestjs/common');
-      throw new ForbiddenException('Hanya ADMIN dapat mengubah role ADMIN');
+      throw new ForbiddenException('Hanya ADMIN dapat mengubah role');
+    }
+    // Pindah divisi = perluasan scope: hanya ADMIN (tutup eskalasi via edit diri sendiri).
+    if (dto.division !== undefined && dto.division !== target.division && req.user.role !== 'ADMIN') {
+      const { ForbiddenException } = await import('@nestjs/common');
+      throw new ForbiddenException('Hanya ADMIN dapat memindahkan divisi');
     }
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name;

@@ -19,13 +19,6 @@ export function assertManualCancel(from: string, isAdmin: boolean) {
     throw new BadRequestException(`Tidak bisa membatalkan dari status ${from}`);
 }
 
-// Transisi otomatis job (idempotent, berdasarkan waktu — PRD §8).
-export function autoStatus(m: { status: string; startAt: Date; endAt: Date }, now = new Date()): 'ONGOING' | 'COMPLETED' | null {
-  if (m.status === 'PUBLISHED' && m.startAt <= now) return 'ONGOING';
-  if (m.status === 'ONGOING' && m.endAt <= now) return 'COMPLETED';
-  return null;
-}
-
 // Duplikasi: durasi + offset window relatif startAt dipertahankan (PRD §8).
 export function duplicateTimes(
   src: { startAt: Date; endAt: Date; attendanceOpenAt: Date; attendanceCloseAt: Date },

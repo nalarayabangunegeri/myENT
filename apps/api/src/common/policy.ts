@@ -1,15 +1,12 @@
 import { Role, User } from '../generated/client';
 
-// Satu policy layer — AGENTS §6. Tambah scope divisi di sini tanpa ubah controller (PRD §22.3).
-export function can(user: Pick<User, 'role'>, action: string): boolean {  if (user.role === Role.ADMIN) return true;
-  if (user.role === Role.OFFICER)
-    return [
-      'user:create',
-      'user:read',
-      'user:reset-password',
-      'audit:read',
-    ].includes(action);
-  return action === 'me:read';
+// Lapisan policy baca (PRD §22.3): OFFICER hanya divisinya; ADMIN global.
+// Dipakai SERAGAM di semua list/rekap — jangan filter divisi ad-hoc di service.
+// Tanpa field = filter top-level (tabel user); dengan field = via relasi.
+export function divisionScope(actor: { role: string; division: string }, field?: string): any {
+  if (actor.role === 'ADMIN') return {};
+  const cond = { division: actor.division };
+  return field ? { [field]: cond } : cond;
 }
 
 // Backlog scope divisi (§22.3): OFFICER hanya atas anggota se-divisi; ADMIN bebas.
