@@ -1,5 +1,6 @@
 # API prod: install (Bun) → generate → build → migrate+start via entrypoint.
-FROM oven/bun:1 AS build
+# Bun di-pin minor (= CI) — rilis minor baru jangan diam-diam masuk prod.
+FROM oven/bun:1.3 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json bun.lock ./
@@ -9,7 +10,7 @@ COPY apps/api ./apps/api
 RUN apps/api/node_modules/.bin/prisma generate --schema apps/api/prisma/schema.prisma \
  && bun --filter api build
 
-FROM oven/bun:1
+FROM oven/bun:1.3
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000

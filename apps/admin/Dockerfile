@@ -24,6 +24,6 @@ COPY --from=build /app/apps/admin/.next/standalone ./
 COPY --from=build /app/apps/admin/.next/static ./apps/admin/.next/static
 COPY --from=build /app/apps/admin/public ./apps/admin/public
 EXPOSE 3102
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3102/login').then(()=>process.exit(0)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3102/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 USER node
 CMD ["node", "apps/admin/server.js"]
