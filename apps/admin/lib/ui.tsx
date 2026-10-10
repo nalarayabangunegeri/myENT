@@ -157,6 +157,17 @@ export function Empty({ text = 'Belum ada data' }: { text?: string }) {
   return <p className="text-gray-400 text-sm py-8 text-center">{text}</p>;
 }
 
+export function Loading({ text = 'Memuat…' }: { text?: string }) {
+  return (
+    <div className="space-y-2 py-4" role="status" aria-label={text}>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="h-9 animate-pulse rounded-xl bg-gray-100" />
+      ))}
+      <p className="text-center text-xs text-gray-400">{text}</p>
+    </div>
+  );
+}
+
 export function Err({ msg }: { msg: string }) {
   if (!msg) return null;
   return <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200 mb-3">{msg}</p>;

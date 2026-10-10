@@ -46,6 +46,7 @@ export class AuditController {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: { actor: { select: { id: true, nim: true, name: true } } },
       }),
     ]);
     return { page, limit, total, data };

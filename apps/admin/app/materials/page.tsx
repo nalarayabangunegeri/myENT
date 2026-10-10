@@ -1,15 +1,30 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/client';
-import { Btn, Card, Empty, Err, PageHeader, Thead, field } from '@/lib/ui';
+import { Btn, Card, Empty, Err, Loading, PageHeader, Pager, Thead, field } from '@/lib/ui';
+
+const LIMIT = 20;
 
 export default function Materials() {
   const [rows, setRows] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [first, setFirst] = useState(true);
   const [err, setErr] = useState('');
   const [title, setTitle] = useState('');
-  const load = () => api<{ data: any[] }>('materials?limit=50').then((r) => setRows(r.data)).catch((e) => setErr(e.message));
+  const load = (p = page) => api<{ data: any[]; total: number }>(`materials?page=${p}&limit=${LIMIT}`)
+    .then((r) => {
+      setRows(r.data);
+      setTotal(r.total);
+      setPage(p);
+      setFirst(false);
+    })
+    .catch((e) => {
+      setErr(e.message);
+      setFirst(false);
+    });
   useEffect(() => {
-    load();
+    load(1);
   }, []);
 
   async function upload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -24,7 +39,7 @@ export default function Materials() {
     try {
       await api('materials', { method: 'POST', body: fd });
       setTitle('');
-      load();
+      load(1);
     } catch (er: any) {
       setErr(er.message);
     }
@@ -42,7 +57,7 @@ export default function Materials() {
         <input className={`${field} w-full sm:max-w-md`} placeholder="Judul materi (isi dulu sebelum upload)" value={title} onChange={(e) => setTitle(e.target.value)} />
       </Card>
       <Card className="p-4">
-        {rows.length === 0 ? <Empty /> : (
+        {first ? <Loading /> : rows.length === 0 ? <Empty /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-sm">
               <Thead cols={['Judul', 'Ukuran', 'Aksi']} />
@@ -63,6 +78,7 @@ export default function Materials() {
             </table>
           </div>
         )}
+        <Pager page={page} total={total} limit={LIMIT} onPage={load} />
       </Card>
     </div>
   );
