@@ -63,14 +63,16 @@ export class InsightController {
   @Roles('OFFICER', 'ADMIN')
   @Get('analytics/trends')
   trends(@Query('months') months?: string) {
-    const m = Math.min(Math.max(Number(months ?? 6), 1), 24);
+    const n = Number(months ?? 6);
+    const m = Math.min(Math.max(Number.isFinite(n) ? n : 6, 1), 24);
     return this.insight.trends(m);
   }
 
   @Roles('OFFICER', 'ADMIN')
   @Get('analytics/frequent-absentees')
   absentees(@Query('limit') limit?: string) {
-    return this.insight.frequentAbsentees(Number(limit ?? 10));
+    const n = Number(limit ?? 10);
+    return this.insight.frequentAbsentees(Math.min(Math.max(Number.isFinite(n) ? Math.floor(n) : 10, 1), 50));
   }
 
   @Roles('OFFICER', 'ADMIN')

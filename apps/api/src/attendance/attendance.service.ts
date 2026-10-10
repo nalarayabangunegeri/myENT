@@ -148,6 +148,10 @@ export class AttendanceService {
     const a = await this.prisma.attendance.findUnique({ where: { id: attendanceId } });
     if (!a) throw new NotFoundException('Tidak ditemukan');
     if (reqUser.role === 'MEMBER' && a.userId !== reqUser.id) throw new NotFoundException('Tidak ditemukan');
+    if (reqUser.role === 'OFFICER' && a.userId !== reqUser.id) {
+      const target = await this.prisma.user.findUnique({ where: { id: a.userId }, select: { id: true, division: true } });
+      if (!target || !canManageMember(reqUser, target)) throw new NotFoundException('Tidak ditemukan');
+    }
     if (!a.selfieObjectKey || a.selfieDeletedAt) throw new GoneException('File sudah dihapus');
     return { url: await this.storage.signedUrl(a.selfieObjectKey, baseUrl) };
   }

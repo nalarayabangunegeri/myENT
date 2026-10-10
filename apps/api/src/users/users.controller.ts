@@ -17,6 +17,7 @@ class CreateUserDto {
   @IsString() @MinLength(10) @MaxLength(128) password!: string;
   @IsString() @IsOptional() role?: 'MEMBER' | 'OFFICER' | 'ADMIN';
   @IsString() @IsOptional() division?: string;
+  @IsEmail() @IsOptional() email?: string;
   @IsInt() @IsOptional() @Type(() => Number) cohortYear?: number;
 }
 
@@ -60,22 +61,26 @@ export class UsersController {
       throw new ForbiddenException('Hanya ADMIN dapat membuat ADMIN');
     }
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.prisma.user.create({
-      data: {
-        nim: dto.nim,
-        name: dto.name,
-        passwordHash,
-        role: (dto.role as any) ?? 'MEMBER',
-        division: dto.division ?? '',
-        cohortYear: dto.cohortYear ?? 0,
-      },
-    });
-    await this.audit.log({
-      actorId: req.user.id,
-      action: 'user.create',
-      entity: 'User',
-      entityId: user.id,
-      newValue: { nim: user.nim, role: user.role } as any,
+    const user = await this.prisma.$transaction(async (tx: any) => {
+      const u = await tx.user.create({
+        data: {
+          nim: dto.nim,
+          name: dto.name,
+          passwordHash,
+          role: (dto.role as any) ?? 'MEMBER',
+          division: dto.division ?? '',
+          email: dto.email ?? null,
+          cohortYear: dto.cohortYear ?? 0,
+        },
+      });
+      await this.audit.log({
+        actorId: req.user.id,
+        action: 'user.create',
+        entity: 'User',
+        entityId: u.id,
+        newValue: { nim: u.nim, role: u.role } as any,
+      }, tx);
+      return u;
     });
     const { passwordHash: _, ...safe } = user;
     return safe;
@@ -100,7 +105,7 @@ export class UsersController {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        select: { id: true, nim: true, name: true, role: true, status: true, division: true, cohortYear: true, joinedAt: true },
+        select: { id: true, nim: true, name: true, role: true, status: true, division: true, cohortYear: true, email: true, joinedAt: true },
       }),
     ]);
     return { page, limit, total, data };

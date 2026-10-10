@@ -29,15 +29,18 @@ export class MaterialsService {
     await this.storage.save(key, file, 'application/pdf');
     let m;
     try {
-      m = await this.prisma.material.create({
-        data: { title, description: description ?? '', objectKey: key, mime: 'application/pdf', size: file.length, meetingId: meetingId || null, uploaderId: actorId },
+      m = await this.prisma.$transaction(async (tx: any) => {
+        const row = await tx.material.create({
+          data: { title, description: description ?? '', objectKey: key, mime: 'application/pdf', size: file.length, meetingId: meetingId || null, uploaderId: actorId },
+        });
+        await this.audit.log({ actorId, action: 'material.upload', entity: 'Material', entityId: row.id, newValue: { title } as any }, tx);
+        return row;
       });
     } catch (e) {
       await this.storage.remove(key); // DB gagal → jangan tinggalkan file yatim.
       throw e;
     }
-    await this.audit.log({ actorId, action: 'material.upload', entity: 'Material', entityId: m.id, newValue: { title } as any });
-    await this.notif.broadcast(undefined, 'material', `Materi baru: ${title}`, '');
+    await this.notif.broadcast(undefined, 'material', `Materi baru: ${title}`, '').catch(() => {});
     return m;
   }
 
@@ -62,9 +65,11 @@ export class MaterialsService {
     const m = await this.prisma.material.findUnique({ where: { id } });
     if (!m) throw new NotFoundException('Tidak ditemukan');
     if (!isAdmin && m.uploaderId !== actorId) throw new ForbiddenException('Hanya pengunggah atau ADMIN');
-    await this.prisma.material.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.material.delete({ where: { id } });
+      await this.audit.log({ actorId, action: 'material.delete', entity: 'Material', entityId: id, oldValue: { title: m.title } as any }, tx);
+    });
     await this.storage.remove(m.objectKey).catch(() => {});
-    await this.audit.log({ actorId, action: 'material.delete', entity: 'Material', entityId: id, oldValue: { title: m.title } as any });
     return { ok: true };
   }
 }

@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { MaterialsService } from './materials.service';
+import { baseFromReq } from '../storage/storage.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
@@ -39,8 +40,7 @@ export class MaterialsController {
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get(':id/file')
   file(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    const base = `${req.protocol}://${req.get('host')}`;
-    return this.materials.fileUrl(req.user, id, base);
+    return this.materials.fileUrl(req.user, id, baseFromReq(req));
   }
 
   @Roles('OFFICER', 'ADMIN')

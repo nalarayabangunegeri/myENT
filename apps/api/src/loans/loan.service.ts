@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
 import { sanitizeImage } from '../storage/sanitize';
+import { canManageMember } from '../common/policy';
 
 @Injectable()
 export class LoanService {
@@ -22,8 +23,9 @@ export class LoanService {
     return `loans/${itemId}/${randomUUID()}.jpg`;
   }
 
-  private async hist(itemId: string, actorId: string | null, action: string, oldValue: string, newValue: string, note = '') {
-    await this.prisma.itemHistory.create({ data: { itemId, actorId, action, oldValue, newValue, note } });
+  private async hist(itemId: string, actorId: string | null, action: string, oldValue: string, newValue: string, note = '', tx?: any) {
+    const db: any = tx ?? this.prisma;
+    await db.itemHistory.create({ data: { itemId, actorId, action, oldValue, newValue, note } });
   }
 
   private async cleanPhoto(file?: Buffer): Promise<Buffer> {
@@ -36,9 +38,12 @@ export class LoanService {
 
   async createItem(actorId: string, name: string, code: string, category: string, condition: string) {
     try {
-      const item = await this.prisma.item.create({ data: { name, code, category: category ?? '', condition: condition ?? 'Baik' } });
-      await this.audit.log({ actorId, action: 'item.create', entity: 'Item', entityId: item.id, newValue: { name, code } as any });
-      await this.hist(item.id, actorId, 'created', '', `${name} (${code})`);
+      const item = await this.prisma.$transaction(async (tx: any) => {
+        const it = await tx.item.create({ data: { name, code, category: category ?? '', condition: condition ?? 'Baik' } });
+        await this.audit.log({ actorId, action: 'item.create', entity: 'Item', entityId: it.id, newValue: { name, code } as any }, tx);
+        await this.hist(it.id, actorId, 'created', '', `${name} (${code})`, '', tx);
+        return it;
+      });
       return item;
     } catch (e: any) {
       if (e?.code === 'P2002') throw new ConflictException('Kode barang sudah dipakai');
@@ -51,10 +56,13 @@ export class LoanService {
     if (!item) throw new NotFoundException('Tidak ditemukan');
     if (item.status === 'BORROWED') throw new BadRequestException('Barang sedang dipinjam');
     if (dto.status && !['AVAILABLE', 'MAINTENANCE'].includes(dto.status)) throw new BadRequestException('Status tidak valid');
-    const updated = await this.prisma.item.update({ where: { id }, data: { ...dto } });
-    await this.audit.log({ actorId, action: 'item.update', entity: 'Item', entityId: id, oldValue: { status: item.status, condition: item.condition } as any, newValue: { status: updated.status, condition: updated.condition } as any });
-    if (item.condition !== updated.condition || item.status !== updated.status)
-      await this.hist(id, actorId, 'updated', `${item.condition}/${item.status}`, `${updated.condition}/${updated.status}`);
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const u = await tx.item.update({ where: { id }, data: { ...dto } });
+      await this.audit.log({ actorId, action: 'item.update', entity: 'Item', entityId: id, oldValue: { status: item.status, condition: item.condition } as any, newValue: { status: u.status, condition: u.condition } as any }, tx);
+      if (item.condition !== u.condition || item.status !== u.status)
+        await this.hist(id, actorId, 'updated', `${item.condition}/${item.status}`, `${u.condition}/${u.status}`, '', tx);
+      return u;
+    });
     return updated;
   }
 
@@ -95,10 +103,12 @@ export class LoanService {
             photoOutKey: key, noteOut: noteOut ?? '', dueAt,
           },
         });
-        await tx.item.update({ where: { id: itemId }, data: { status: 'BORROWED' } });
+        // Conditional update: dua borrow konkuren → hanya satu yang dapat count 1 (indeks parsial + P2002 sebagai jaring terakhir).
+        const claimed = await tx.item.updateMany({ where: { id: itemId, status: 'AVAILABLE' }, data: { status: 'BORROWED' } });
+        if (!claimed.count) throw new ConflictException('Barang baru saja dipinjam orang lain');
+        await this.audit.log({ actorId: user.id, action: 'loan.create', entity: 'Loan', entityId: l.id, newValue: { itemId, dueAt } as any }, tx);
         return l;
       });
-      await this.audit.log({ actorId: user.id, action: 'loan.create', entity: 'Loan', entityId: loan.id, newValue: { itemId, dueAt } as any });
       return loan;
     } catch (e: any) {
       await this.storage.remove(key);
@@ -123,17 +133,17 @@ export class LoanService {
           where: { id }, data: { status: 'RETURNED', photoInKey: key, noteIn: noteIn ?? '', returnedAt: now },
         });
         await tx.item.update({ where: { id: loan.itemId }, data: { status: damaged ? 'MAINTENANCE' : 'AVAILABLE' } });
+        await this.audit.log({
+          actorId, action: 'loan.return', entity: 'Loan', entityId: id,
+          oldValue: { status: loan.status } as any, newValue: { status: 'RETURNED', damaged } as any,
+        }, tx);
+        await this.hist(loan.itemId, actorId, damaged ? 'damaged' : 'returned', loan.status, damaged ? 'MAINTENANCE' : 'AVAILABLE', noteIn, tx);
         return l;
       });
     } catch (e) {
       await this.storage.remove(key);
       throw e;
     }
-    await this.audit.log({
-      actorId, action: 'loan.return', entity: 'Loan', entityId: id,
-      oldValue: { status: loan.status } as any, newValue: { status: 'RETURNED', damaged } as any,
-    });
-    await this.hist(loan.itemId, actorId, damaged ? 'damaged' : 'returned', loan.status, damaged ? 'MAINTENANCE' : 'AVAILABLE', noteIn);
     await this.notif.notifyUsers([loan.borrowerId], 'loan-returned', 'Pengembalian diterima', '').catch(() => {});
     return out;
   }
@@ -182,20 +192,31 @@ export class LoanService {
     const loan = await this.prisma.loan.findUnique({ where: { id } });
     if (!loan) throw new NotFoundException('Tidak ditemukan');
     if (user.role === 'MEMBER' && loan.borrowerId !== user.id) throw new NotFoundException('Tidak ditemukan');
+    if (user.role === 'OFFICER' && loan.borrowerId !== user.id) {
+      const target = await this.prisma.user.findUnique({ where: { id: loan.borrowerId }, select: { id: true, division: true } });
+      if (!target || !canManageMember(user, target)) throw new NotFoundException('Tidak ditemukan');
+    }
     const key = which === 'in' ? loan.photoInKey : loan.photoOutKey;
     if (!key || loan.photoDeletedAt) throw new GoneException('File sudah dihapus');
     return { url: await this.storage.signedUrl(key, baseUrl) };
   }
 
   // Overdue + reminder H-1 (dipanggil dari tick; idempotent via WHERE/flag).
+  // Notif hanya untuk yang BARU transisi (bukan seluruh OVERDUE tiap tick).
   async overdueTick(now = new Date()) {
-    const over = await this.prisma.loan.updateMany({
+    const newly = await this.prisma.loan.findMany({
       where: { status: 'ACTIVE', dueAt: { lte: now } },
-      data: { status: 'OVERDUE' },
+      select: { id: true, borrowerId: true },
     });
-    if (over.count) {
-      const rows = await this.prisma.loan.findMany({ where: { status: 'OVERDUE' }, select: { borrowerId: true } });
-      await this.notif.notifyUsers([...new Set(rows.map((r) => r.borrowerId))], 'loan-overdue', 'Ada pinjaman lewat tenggat', '').catch(() => {});
+    let overdue = 0;
+    if (newly.length) {
+      const marked = await this.prisma.loan.updateMany({
+        where: { id: { in: newly.map((l) => l.id) }, status: 'ACTIVE' },
+        data: { status: 'OVERDUE' },
+      });
+      overdue = marked.count;
+      if (overdue)
+        await this.notif.notifyUsers([...new Set(newly.map((r) => r.borrowerId))], 'loan-overdue', 'Ada pinjaman lewat tenggat', '').catch(() => {});
     }
     const soon = new Date(now.getTime() + 24 * 86400_000);
     const due = await this.prisma.loan.findMany({
@@ -206,6 +227,6 @@ export class LoanService {
       await this.notif.notifyUsers([l.borrowerId], 'loan-due', 'Pinjaman jatuh tempo besok', '').catch(() => {});
       await this.prisma.loan.update({ where: { id: l.id }, data: { dueRemindedAt: now } });
     }
-    return { overdue: over.count, reminded: due.length };
+    return { overdue, reminded: due.length };
   }
 }

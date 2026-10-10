@@ -42,11 +42,11 @@ SEED_ADMIN_NIM=admin001 SEED_ADMIN_PASSWORD='UbahSaya123!' bun apps/api/prisma/s
 DATABASE_URL='postgresql://postgres:postgres@localhost:5432/jurnalistik?schema=public' \
 JWT_SECRET='min-32-karakter-rahasia-dev-saja' \
 STORAGE_DRIVER=local UPLOAD_DIR=./uploads \
-bun --filter api start:dev          # :3100
+bun --filter api start:dev          # :3000
 
-API_URL=http://localhost:3100 bun --filter admin dev   # :3102
+API_URL=http://localhost:3000 bun --filter admin dev   # :3102
 
-cd apps/mobile && flutter run --dart-define=API_URL=http://10.0.2.2:3100
+cd apps/mobile && flutter run --dart-define=API_URL=http://10.0.2.2:3000
 # HP fisik: ganti 10.0.2.2 dengan IP LAN laptop
 ```
 

@@ -3,9 +3,14 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(ex: unknown, host: ArgumentsHost) {
-    const res = host.switchToHttp().getResponse();
+    const ctx = host.switchToHttp();
+    const req = ctx.getRequest?.();
+    const res = ctx.getResponse();
     const status = ex instanceof HttpException ? ex.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const prod = process.env.NODE_ENV === 'production';
+    // 500 dicatat agar kriteria rollout "nol 500 di log" bisa diukur — tanpa body/query (bisa memuat password/token).
+    if (status >= 500)
+      console.error(`[http-500] ${req?.method} ${req?.url} -> ${status}`, ex instanceof Error ? ex.message : ex);
     const body =
       ex instanceof HttpException
         ? (ex.getResponse() as any)

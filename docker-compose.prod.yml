@@ -46,6 +46,11 @@ services:
       R2_BUCKET: ${R2_BUCKET:-}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       MEETING_TICK_MS: ${MEETING_TICK_MS:-60000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      API_PUBLIC_URL: ${API_URL:-}
+      FILE_HMAC_SECRET: ${FILE_HMAC_SECRET:-}
+      QR_HMAC_SECRET: ${QR_HMAC_SECRET:-}
+      TOTP_ENC_KEY: ${TOTP_ENC_KEY:?isi TOTP_ENC_KEY min 32 karakter}
     depends_on:
       db:
         condition: service_healthy

@@ -364,6 +364,8 @@ model TwoFaChallenge {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime  @map("expires_at") @db.Timestamptz
   usedAt    DateTime? @map("used_at") @db.Timestamptz
+  // Batas tebak per challenge: salah 5x → hangus (login ulang), anti brute-force.
+  attempts  Int       @default(0)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([userId])

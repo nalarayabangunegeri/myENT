@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsDate, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { AssignmentsService } from './assignments.service';
+import { baseFromReq } from '../storage/storage.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
@@ -62,14 +63,13 @@ export class AssignmentsController {
 
   @Roles('OFFICER', 'ADMIN')
   @Patch('submissions/:id/review')
-  review(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDto) {
-    return this.assignments.review(id, dto.reviewNote ?? '');
+  review(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewDto) {
+    return this.assignments.review(req.user.id, id, dto.reviewNote ?? '');
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get('submissions/:id/file')
   file(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    const base = `${req.protocol}://${req.get('host')}`;
-    return this.assignments.fileUrl(req.user, id, base);
+    return this.assignments.fileUrl(req.user, id, baseFromReq(req));
   }
 }

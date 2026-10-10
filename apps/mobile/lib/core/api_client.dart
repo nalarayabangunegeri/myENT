@@ -17,8 +17,8 @@ class MustChange implements Exception {}
 // Satu pintu ke API (docs/API.md): timeout 30 dtk, refresh diam-diam sekali saat 401.
 // ponytail: single-flight refresh in-memory. Ceiling: очередь ulang saat multi-isolate.
 class Api {
-  // Emulator Android: 10.0.2.2. HP fisik: ganti via --dart-define=API_URL=http://<lan-ip>:3100
-  static const base = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3100');
+  // Emulator Android: 10.0.2.2. HP fisik: ganti via --dart-define=API_URL=http://<lan-ip>:3000
+  static const base = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3000');
   static Future<bool>? _refreshing;
 
   static Future<bool> _doRefresh() {

@@ -44,7 +44,7 @@ Format sama dengan script (`uploads-YYYYMMDD.tgz`, prune 7 hari):
 15 2 * * * docker run --rm -v $(docker volume ls -q | grep -m1 'uploads$'):/u -v /srv/backup:/b alpine sh -c 'tar czf /b/uploads-$(date +%Y%m%d).tgz -C /u . && find /b -maxdepth 1 -name "uploads-*.tgz" -mtime +7 -delete'
 ```
 
-Restore: `gunzip -c /srv/backup/backup-YYYYMMDD.sql.gz | psql "$DATABASE_URL_BERSIH"` (format baru terkompresi; lihat `scripts/backup.sh`).
+Restore: `gunzip -c /srv/backup/backup-YYYYMMDD.sql.gz | docker compose -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" "$POSTGRES_DB"` (format baru terkompresi; lihat `scripts/backup.sh`).
 Uji restore berkala (PRD §18): restore ke DB kosong → login + rekap OK — catat tanggal drill di bawah.
 
 Drill terakhir: 2026-10-07 (lokal: backup `.sql.gz` via `scripts/backup.sh` → restore ke DB
@@ -65,7 +65,7 @@ Kriteria lanjut tahap: presensi sukses >95%, nol 500 di log API, rekap cocok hit
 ```bash
 # Backup dulu (DB + uploads bila driver local), catat revisi lama:
 OLD=$(git rev-parse --short HEAD)
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /srv/backup/pre-$(date +%F)-$OLD.sql
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > /srv/backup/pre-$(date +%F)-$OLD.sql.gz
 git pull
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 curl https://API_URL/health   # {"ok":true}
@@ -76,7 +76,7 @@ Rollback kode (DB tak bisa mundur otomatis — restore backup bila migrasi merus
 ```bash
 git checkout <revisi-lama>   # mis. $OLD
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-# bila perlu: psql "$DATABASE_URL_BERSIH" < /srv/backup/pre-....sql
+# bila perlu: gunzip -c /srv/backup/pre-....sql.gz | docker compose -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" "$POSTGRES_DB"
 ```
 
 Catatan: API browser-langsung ditolak CORS secara default (tanpa `ALLOWED_ORIGINS` di service `api`

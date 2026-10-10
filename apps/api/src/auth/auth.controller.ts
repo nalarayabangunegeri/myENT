@@ -21,7 +21,9 @@ export class AuthController {
       const { UnauthorizedException } = await import('@nestjs/common');
       throw new UnauthorizedException('Terlalu banyak percobaan, coba lagi sebentar');
     }
-    return this.auth.login(dto.nim, dto.password);
+    const out = await this.auth.login(dto.nim, dto.password);
+    this.throttle.reset(key); // sukses: jangan hitung; gagal (throw) tetap tercatat.
+    return out;
   }
 
   @Post('refresh')

@@ -8,6 +8,7 @@ import { OrgConfigService } from '../config/org-config.service';
 import { detectImage } from '../attendance/attendance.rules';
 import { isPdf } from '../materials/materials.service';
 import { assertPdf, sanitizeImage } from '../storage/sanitize';
+import { canManageMember } from '../common/policy';
 
 // Status submission diturunkan (PRD §15.3): REVIEWED > LATE > SUBMITTED (tanpa record = NOT_SUBMITTED).
 export function submissionStatus(s: { submittedAt: Date; reviewedAt: Date | null }, deadline: Date) {
@@ -44,14 +45,18 @@ export class AssignmentsService {
     }
     let a;
     try {
-      a = await this.prisma.assignment.create({
-        data: { title, description: description ?? '', meetingId: meetingId || null, deadline, attachmentKey, creatorId: actorId },
+      a = await this.prisma.$transaction(async (tx: any) => {
+        const row = await tx.assignment.create({
+          data: { title, description: description ?? '', meetingId: meetingId || null, deadline, attachmentKey, creatorId: actorId },
+        });
+        await this.audit.log({ actorId, action: 'assignment.create', entity: 'Assignment', entityId: row.id, newValue: { title } as any }, tx);
+        return row;
       });
     } catch (e) {
       if (attachmentKey) await this.storage.remove(attachmentKey);
       throw e;
     }
-    await this.notif.broadcast(undefined, 'assignment', `Tugas baru: ${title}`, '');
+    await this.notif.broadcast(undefined, 'assignment', `Tugas baru: ${title}`, '').catch(() => {});
     return a;
   }
 
@@ -137,16 +142,27 @@ export class AssignmentsService {
     };
   }
 
-  async review(id: string, reviewNote: string) {
+  async review(actorId: string, id: string, reviewNote: string) {
     const s = await this.prisma.submission.findUnique({ where: { id } });
     if (!s) throw new NotFoundException('Tidak ditemukan');
-    return this.prisma.submission.update({ where: { id }, data: { reviewedAt: new Date(), reviewNote: reviewNote ?? '' } });
+    return this.prisma.$transaction(async (tx: any) => {
+      const u = await tx.submission.update({ where: { id }, data: { reviewedAt: new Date(), reviewNote: reviewNote ?? '' } });
+      await this.audit.log({
+        actorId, action: 'submission.review', entity: 'Submission', entityId: id,
+        oldValue: { reviewedAt: s.reviewedAt } as any, newValue: { reviewedAt: u.reviewedAt } as any,
+      }, tx);
+      return u;
+    });
   }
 
   async fileUrl(user: any, submissionId: string, baseUrl: string) {
     const s = await this.prisma.submission.findUnique({ where: { id: submissionId } });
     if (!s) throw new NotFoundException('Tidak ditemukan');
     if (user.role === 'MEMBER' && s.userId !== user.id) throw new NotFoundException('Tidak ditemukan');
+    if (user.role === 'OFFICER' && s.userId !== user.id) {
+      const target = await this.prisma.user.findUnique({ where: { id: s.userId }, select: { id: true, division: true } });
+      if (!target || !canManageMember(user, target)) throw new NotFoundException('Tidak ditemukan');
+    }
     if (s.fileDeletedAt) throw new GoneException('File sudah dihapus');
     return { url: await this.storage.signedUrl(s.objectKey, baseUrl) };
   }

@@ -1,6 +1,6 @@
 # API Contract — Mobile (dan referensi Web Admin)
 
-Base URL: `https://api…` (dev: `http://localhost:3100`). Semua waktu di API = **UTC ISO-8601**;
+Base URL: `https://api…` (dev: `http://localhost:3000`). Semua waktu di API = **UTC ISO-8601**;
 aplikasi mengonversi ke `Asia/Jakarta` untuk tampilan. Sumber jam presensi = **server**.
 
 ## Auth

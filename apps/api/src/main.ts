@@ -11,6 +11,8 @@ async function bootstrap() {
     const s = process.env.JWT_SECRET ?? '';
     if (s.length < 32) throw new Error('JWT_SECRET minimal 32 karakter di production');
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL wajib di production');
+    if ((process.env.TOTP_ENC_KEY ?? '').length < 32)
+      throw new Error('TOTP_ENC_KEY minimal 32 karakter di production (secret 2FA wajib terenkripsi)');
   }
   const app = await NestFactory.create(AppModule);
   app.getHttpAdapter().getInstance().set('trust proxy', 1);

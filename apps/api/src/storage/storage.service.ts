@@ -3,19 +3,26 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { mkdir, writeFile, readFile, unlink } from 'fs/promises';
-import { dirname, join } from 'path';
-import { requireJwtSecret } from '../common/jwt-secret';
+import { dirname, resolve, sep } from 'path';
+import { requireFileSecret } from '../common/jwt-secret';
 
 // ponytail: driver local untuk dev/smoke tanpa R2; R2 S3-compatible untuk prod (PRD §10).
 // STORAGE_DRIVER=local| r2. Upgrade path: hapus driver local saat semua env punya R2.
 function fileSecret(): string {
-  return requireJwtSecret();
+  return requireFileSecret();
+}
+
+// Base URL untuk signed URL lokal: API_PUBLIC_URL bila diisi (prod), else host request (dev).
+export function baseFromReq(req: any): string {
+  const pub = (process.env.API_PUBLIC_URL ?? '').replace(/\/$/, '');
+  if (pub) return pub;
+  return `${req.protocol}://${req.get('host')}`;
 }
 
 @Injectable()
 export class StorageService {
   private driver = process.env.STORAGE_DRIVER ?? 'local';
-  private dir = process.env.UPLOAD_DIR ?? './uploads';
+  private dir = resolve(process.env.UPLOAD_DIR ?? './uploads');
   private s3?: S3Client;
   private bucket = process.env.R2_BUCKET ?? '';
 
@@ -33,12 +40,19 @@ export class StorageService {
     return this.s3;
   }
 
+  // Path harus tetap di dalam dir upload (anti traversal, termasuk encoded/normalisasi).
+  private localPath(key: string) {
+    const p = resolve(this.dir, key);
+    if (p !== this.dir && !p.startsWith(this.dir + sep)) throw new Error('Invalid key');
+    return p;
+  }
+
   async save(key: string, buf: Buffer, contentType: string) {
-    if (key.includes('..')) throw new Error('Invalid key');
+    this.localPath(key); // validasi sebelum sentuh R2/disk.
     if (this.driver === 'r2')
       await this.client().send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: buf, ContentType: contentType }));
     else {
-      const p = join(this.dir, key);
+      const p = this.localPath(key);
       await mkdir(dirname(p), { recursive: true });
       await writeFile(p, buf);
     }
@@ -49,7 +63,7 @@ export class StorageService {
     if (this.driver === 'r2') await this.client().send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
     else {
       try {
-        await unlink(join(this.dir, key));
+        await unlink(this.localPath(key));
       } catch (e: any) {
         if (e?.code !== 'ENOENT') throw e; // hilang = anggap terhapus; gagal lain = retry tick berikut
       }
@@ -66,12 +80,20 @@ export class StorageService {
   }
 
   static verifyLocalToken(key: string, exp: string, sig: string) {
-    if (key.includes('..') || Date.now() / 1000 > Number(exp)) return false;
+    if (Date.now() / 1000 > Number(exp)) return false;
     const want = createHmac('sha256', fileSecret()).update(`${key}:${exp}`).digest('hex');
     return sig.length === want.length && timingSafeEqual(Buffer.from(sig), Buffer.from(want));
   }
 
+  // Content-Type untuk driver lokal: dari ekstensi key (key dibuat server, bukan client).
+  static contentTypeFor(key: string) {
+    if (key.endsWith('.pdf')) return 'application/pdf';
+    if (key.endsWith('.png')) return 'image/png';
+    if (key.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
   async readLocal(key: string) {
-    return readFile(join(this.dir, key));
+    return readFile(this.localPath(key));
   }
 }

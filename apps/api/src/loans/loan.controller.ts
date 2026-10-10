@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
-import { IsDate, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDate, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { LoanService } from './loan.service';
+import { baseFromReq } from '../storage/storage.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
@@ -24,6 +25,12 @@ class UpdateItemDto {
 class ReturnDto {
   @IsString() @IsOptional() @MaxLength(500) noteIn?: string;
   @IsOptional() damaged?: boolean;
+}
+
+class BorrowDto {
+  @IsUUID() itemId!: string;
+  @IsDate() @Type(() => Date) dueAt!: Date;
+  @IsString() @IsOptional() @MaxLength(500) noteOut?: string;
 }
 
 class PageQuery {
@@ -65,10 +72,10 @@ export class LoanController {
   @UseInterceptors(FileInterceptor('photo', { limits: { files: 1, fileSize: 5 * 1024 * 1024 } }))
   borrow(
     @Req() req: any,
-    @Body() body: { itemId: string; dueAt: string; noteOut?: string },
+    @Body() body: BorrowDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.loans.borrow(req.user, body.itemId, new Date(body.dueAt), body.noteOut ?? '', file?.buffer ?? Buffer.alloc(0));
+    return this.loans.borrow(req.user, body.itemId, body.dueAt, body.noteOut ?? '', file?.buffer ?? Buffer.alloc(0));
   }
 
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
@@ -104,7 +111,6 @@ export class LoanController {
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get('loans/:id/photo')
   photo(@Req() req: any, @Param('id', ParseUUIDPipe) id: string, @Query('which') which?: string) {
-    const base = `${req.protocol}://${req.get('host')}`;
-    return this.loans.photoUrl(req.user, id, which === 'in' ? 'in' : 'out', base);
+    return this.loans.photoUrl(req.user, id, which === 'in' ? 'in' : 'out', baseFromReq(req));
   }
 }

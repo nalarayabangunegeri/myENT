@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsDate, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDate, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { DutyService } from './duty.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
@@ -11,8 +11,8 @@ class RosterDto {
   @IsInt() @Min(1) @Max(90) @Type(() => Number) days!: number;
   @IsOptional() @IsInt() @Min(1) @Max(5) @Type(() => Number) perDay?: number;
   @IsOptional() @IsString() @MaxLength(50) division?: string;
-  @IsOptional() @IsString() openTime?: string;
-  @IsOptional() @IsString() closeTime?: string;
+  @IsOptional() @IsString() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) openTime?: string;
+  @IsOptional() @IsString() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) closeTime?: string;
   @IsOptional() @IsString() @MinLength(3) @MaxLength(100) titlePrefix?: string;
 }
 
@@ -35,7 +35,7 @@ export class DutyController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('duty/assignments')
-  byMeeting(@Query('meetingId') meetingId: string) {
+  byMeeting(@Query('meetingId', ParseUUIDPipe) meetingId: string) {
     return this.duty.assignmentsByMeeting(meetingId);
   }
 
@@ -47,7 +47,7 @@ export class DutyController {
 
   @Roles('OFFICER', 'ADMIN')
   @Get('duty/summary')
-  summary(@Query('userId') userId: string) {
+  summary(@Query('userId', ParseUUIDPipe) userId: string) {
     return this.duty.summary(userId);
   }
 }

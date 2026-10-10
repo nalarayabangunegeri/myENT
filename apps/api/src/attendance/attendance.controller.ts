@@ -6,8 +6,9 @@ import { IsDate, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLe
 import { toXlsx } from '../common/xlsx';
 import { recapPdf } from '../common/recap-pdf';
 import { verifyQr } from '../meetings/qr.rules';
-import { requireJwtSecret } from '../common/jwt-secret';
+import { requireQrSecret } from '../common/jwt-secret';
 import { AttendanceService } from './attendance.service';
+import { baseFromReq } from '../storage/storage.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { RolesGuard } from '../common/roles.guard';
 import { Roles } from '../common/roles.decorator';
@@ -67,7 +68,7 @@ export class AttendanceController {
     @Body() body: QrDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (!verifyQr(body.token, id, requireJwtSecret()))
+    if (!verifyQr(body.token, id, requireQrSecret()))
       throw new BadRequestException('QR tidak valid/kedaluwarsa');
     return this.attendance.createSelf(req.user.id, id, file?.buffer ?? Buffer.alloc(0), body);
   }
@@ -142,7 +143,6 @@ export class AttendanceController {
   @Roles('MEMBER', 'OFFICER', 'ADMIN')
   @Get('attendance/:id/selfie')
   selfie(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    const base = `${req.protocol}://${req.get('host')}`;
-    return this.attendance.selfieUrl(req.user, id, base);
+    return this.attendance.selfieUrl(req.user, id, baseFromReq(req));
   }
 }

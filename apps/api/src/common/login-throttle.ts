@@ -11,4 +11,9 @@ export class LoginThrottle {
     this.hits.set(key, arr);
     return arr.length > limit;
   }
+
+  // Dipanggil saat login sukses: hit sukses tak boleh membakar kuota.
+  reset(key: string) {
+    this.hits.delete(key);
+  }
 }

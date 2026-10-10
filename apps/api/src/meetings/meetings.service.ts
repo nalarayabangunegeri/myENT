@@ -6,7 +6,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { RetentionService } from '../retention/retention.service';
 import { LoanService } from '../loans/loan.service';
 import { assertManualCancel, assertWindow, duplicateTimes } from './meeting.rules';
-import { requireJwtSecret } from '../common/jwt-secret';
+import { requireQrSecret } from '../common/jwt-secret';
 
 // 1 hari dalam ms. Ditulis eksplisit — pernah typo separator menjadi 10 hari.
 export const DAY_MS = 86400_000;
@@ -40,24 +40,27 @@ export class MeetingsService {
       throw new BadRequestException('Recurrence hanya NONE/WEEKLY/BIWEEKLY');
     if (dto.recurrence && dto.recurrence !== 'NONE' && !(dto.recurrenceCount! >= 2 && dto.recurrenceCount! <= 52))
       throw new BadRequestException('recurrenceCount 2–52');
-    const m = await this.prisma.meeting.create({
-      data: {
-        title: dto.title,
-        description: dto.description ?? '',
-        startAt: dto.startAt,
-        endAt: dto.endAt,
-        attendanceOpenAt: dto.attendanceOpenAt,
-        attendanceCloseAt: dto.attendanceCloseAt,
-        status: dto.status ?? 'DRAFT',
-        createdBy: actorId,
-        latitude: dto.latitude ?? null,
-        longitude: dto.longitude ?? null,
-        radiusM: dto.radiusM ?? null,
-        recurrence: dto.recurrence ?? 'NONE',
-        recurrenceCount: dto.recurrence && dto.recurrence !== 'NONE' ? dto.recurrenceCount! : 0,
-      },
+    const m = await this.prisma.$transaction(async (tx: any) => {
+      const row = await tx.meeting.create({
+        data: {
+          title: dto.title,
+          description: dto.description ?? '',
+          startAt: dto.startAt,
+          endAt: dto.endAt,
+          attendanceOpenAt: dto.attendanceOpenAt,
+          attendanceCloseAt: dto.attendanceCloseAt,
+          status: dto.status ?? 'DRAFT',
+          createdBy: actorId,
+          latitude: dto.latitude ?? null,
+          longitude: dto.longitude ?? null,
+          radiusM: dto.radiusM ?? null,
+          recurrence: dto.recurrence ?? 'NONE',
+          recurrenceCount: dto.recurrence && dto.recurrence !== 'NONE' ? dto.recurrenceCount! : 0,
+        },
+      });
+      await this.audit.log({ actorId, action: 'meeting.create', entity: 'Meeting', entityId: row.id }, tx);
+      return row;
     });
-    await this.audit.log({ actorId, action: 'meeting.create', entity: 'Meeting', entityId: m.id });
     return m;
   }
 
@@ -105,21 +108,24 @@ export class MeetingsService {
       if (m.finalizedAt) throw new ForbiddenException('Window terkunci setelah finalized; gunakan penyesuaian manual (§13)');
       assertWindow(times as any);
     }
-    const updated = await this.prisma.meeting.update({
-      where: { id },
-      data: {
-        ...(dto.title !== undefined ? { title: dto.title } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(timeChanged ? times : {}),
-        ...(dto.status ? { status: dto.status } : {}),
-        ...(dto.latitude !== undefined ? { latitude: dto.latitude } : {}),
-        ...(dto.longitude !== undefined ? { longitude: dto.longitude } : {}),
-        ...(dto.radiusM !== undefined ? { radiusM: dto.radiusM } : {}),
-      },
-    });
-    await this.audit.log({
-      actorId, action: 'meeting.update', entity: 'Meeting', entityId: id,
-      oldValue: { status: m.status } as any, newValue: { status: updated.status } as any,
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const u = await tx.meeting.update({
+        where: { id },
+        data: {
+          ...(dto.title !== undefined ? { title: dto.title } : {}),
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(timeChanged ? times : {}),
+          ...(dto.status ? { status: dto.status } : {}),
+          ...(dto.latitude !== undefined ? { latitude: dto.latitude } : {}),
+          ...(dto.longitude !== undefined ? { longitude: dto.longitude } : {}),
+          ...(dto.radiusM !== undefined ? { radiusM: dto.radiusM } : {}),
+        },
+      });
+      await this.audit.log({
+        actorId, action: 'meeting.update', entity: 'Meeting', entityId: id,
+        oldValue: { status: m.status } as any, newValue: { status: u.status } as any,
+      }, tx);
+      return u;
     });
     if (dto.status === 'CANCELLED')
       await this.notif.broadcast(undefined, 'meeting-cancelled', `Kegiatan dibatalkan: ${m.title}`, '').catch(() => {});
@@ -136,15 +142,18 @@ export class MeetingsService {
     assertWindow(times);
     // Hasil DRAFT tanpa attendance/request tersalin (PRD §8). Lokasi + recurrence ikut;
     // duplikat memulai serinya sendiri (parentId null) agar seri asli tak terpotong.
-    const m = await this.prisma.meeting.create({
-      data: {
-        title: src.title, description: src.description, ...times,
-        status: 'DRAFT', createdBy: actorId,
-        latitude: src.latitude, longitude: src.longitude, radiusM: src.radiusM,
-        recurrence: src.recurrence, recurrenceCount: src.recurrenceCount,
-      },
+    const m = await this.prisma.$transaction(async (tx: any) => {
+      const row = await tx.meeting.create({
+        data: {
+          title: src.title, description: src.description, ...times,
+          status: 'DRAFT', createdBy: actorId,
+          latitude: src.latitude, longitude: src.longitude, radiusM: src.radiusM,
+          recurrence: src.recurrence, recurrenceCount: src.recurrenceCount,
+        },
+      });
+      await this.audit.log({ actorId, action: 'meeting.duplicate', entity: 'Meeting', entityId: row.id, newValue: { from: id } as any }, tx);
+      return row;
     });
-    await this.audit.log({ actorId, action: 'meeting.duplicate', entity: 'Meeting', entityId: m.id, newValue: { from: id } as any });
     return m;
   }
 
@@ -153,8 +162,11 @@ export class MeetingsService {
     const attCount = await this.prisma.attendance.count({ where: { meetingId: id } });
     if (attCount > 0)
       throw new ForbiddenException('Meeting sudah memiliki attendance — batalkan via status CANCELLED, bukan delete');
-    const updated = await this.prisma.meeting.update({ where: { id }, data: { deletedAt: new Date() } });
-    await this.audit.log({ actorId, action: 'meeting.delete', entity: 'Meeting', entityId: id });
+    const updated = await this.prisma.$transaction(async (tx: any) => {
+      const u = await tx.meeting.update({ where: { id }, data: { deletedAt: new Date() } });
+      await this.audit.log({ actorId, action: 'meeting.delete', entity: 'Meeting', entityId: id }, tx);
+      return u;
+    });
     return { ok: true, deletedAt: updated.deletedAt };
   }
 
@@ -165,7 +177,7 @@ export class MeetingsService {
     const exp = Date.now() + 5 * 60_1000;
     const { signQr } = await import('./qr.rules');
     const QRCode = (await import('qrcode')).default;
-    const token = signQr(id, exp, requireJwtSecret());
+    const token = signQr(id, exp, requireQrSecret());
     return { qr: await QRCode.toDataURL(token), expiresAt: new Date(exp) };
   }
 

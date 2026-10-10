@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { generateSecret, keyuri, verifyTotp } from './totp';
+import { openTotpSecret, protectTotpSecret } from './totp-crypto';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -25,6 +26,26 @@ export class AuthService {
     return Number(this.config.get('REFRESH_EXPIRES_DAYS') ?? 14);
   }
 
+  private lockoutMinutes() {
+    return Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15);
+  }
+
+  // Keputusan kunci dari nilai DB pasca-increment, bukan dari read stale.
+  private async registerFailedLogin(userId: string) {
+    const maxAttempts = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLogins: { increment: 1 } },
+      select: { failedLogins: true },
+    });
+    if (updated.failedLogins >= maxAttempts) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lockedUntil: new Date(Date.now() + this.lockoutMinutes() * 60_000) },
+      });
+    }
+  }
+
   private async issueTokens(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const accessToken = await this.jwt.signAsync({ sub: user.id, role: user.role });
@@ -44,23 +65,11 @@ export class AuthService {
       throw new UnauthorizedException('NIM atau password salah');
     }
     // Lockout sementara DB-backed, selamat dari restart (PRD §6.3).
-    const maxAttempts = Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5);
     if (user.lockedUntil && user.lockedUntil > new Date())
       throw new UnauthorizedException('Akun terkunci sementara, coba lagi nanti');
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
-      // ponytail: increment atomik (anti-balapan hitungan). Ceiling: Redis saat multi-instance.
-      const updated = await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLogins: { increment: 1 },
-          ...(user.failedLogins + 1 >= maxAttempts
-            ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_000) }
-            : {}),
-        },
-        select: { failedLogins: true },
-      });
-      void updated;
+      await this.registerFailedLogin(user.id);
       await this.audit.log(
         { actorId: user.id, action: 'auth.login-failed', entity: 'User', entityId: user.id },
       ).catch(() => {});
@@ -161,24 +170,27 @@ export class AuthService {
   }
 
   // P1: reset mandiri via email (PRD §6.2). Selalu 200 agar tak bocor enumerasi.
+  // SMTP di luar transaksi: tx hanya DB agar tak menahan koneksi + tak kirim email saat rollback.
   async forgotPassword(nim: string) {
     const user = await this.prisma.user.findUnique({ where: { nim } });
     if (user && user.status === 'ACTIVE' && user.email) {
+      const raw = randomBytes(32).toString('hex');
       await this.prisma.$transaction(async (tx: any) => {
         // Kunci baris user: dua request konkuren jalan berurutan — hanya token terbaru yang hidup.
         await tx.$queryRawUnsafe(`SELECT 1 FROM "users" WHERE "id" = $1 FOR UPDATE`, user.id);
         // Satu token aktif per user: cabut yang belum terpakai sebelum buat baru.
         await tx.passwordReset.deleteMany({ where: { userId: user.id, usedAt: null } });
-        const raw = randomBytes(32).toString('hex');
         await tx.passwordReset.create({
           data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 3600_000) },
         });
-        await this.sendMail(
-          user.email!,
-          'Reset password JURNALISTIK APP',
-          `Tautan reset (1 jam): ${(process.env.WEB_URL ?? '').replace(/\/$/, '')}/reset?token=${raw}`,
-        );
       });
+      const email = user.email;
+      const text = `Tautan reset (1 jam): ${(process.env.WEB_URL ?? '').replace(/\/$/, '')}/reset?token=${raw}`;
+      try {
+        await this.sendMail(email, 'Reset password JURNALISTIK APP', text);
+      } catch (e) {
+        console.error('[forgot-password] sendMail gagal');
+      }
     }
     return { ok: true };
   }
@@ -209,13 +221,13 @@ export class AuthService {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     if (!(await bcrypt.compare(password, user.passwordHash))) throw new UnauthorizedException('Password salah');
     const secret = generateSecret();
-    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: secret, totpEnabled: false } });
+    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: protectTotpSecret(secret), totpEnabled: false } });
     return { secret, otpauthUrl: keyuri(user.nim, secret) };
   }
 
   async enable2fa(userId: string, code: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!user.totpSecret || !verifyTotp(user.totpSecret, code))
+    if (!user.totpSecret || !verifyTotp(openTotpSecret(user.totpSecret), code))
       throw new UnauthorizedException('Kode salah');
     await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: true } });
     await this.audit.log({ actorId: userId, action: 'auth.2fa-enable', entity: 'User', entityId: userId }).catch(() => {});
@@ -240,20 +252,27 @@ export class AuthService {
       data: { usedAt: now },
     });
     if (!claimed.count) throw new UnauthorizedException('Sesi 2FA kedaluwarsa');
-    const refund = () =>
-      this.prisma.twoFaChallenge.updateMany({ where: { id: pendingToken, usedAt: now }, data: { usedAt: null } });
+    // Salah 5x per challenge → hangus (tanpa refund), paksa login ulang.
+    let keepConsumed = false;
+    const refund = () => {
+      if (keepConsumed) return Promise.resolve({ count: 0 });
+      return this.prisma.twoFaChallenge.updateMany({ where: { id: pendingToken, usedAt: now }, data: { usedAt: null } });
+    };
     try {
       const challenge = await this.prisma.twoFaChallenge.findUniqueOrThrow({ where: { id: pendingToken } });
       const user = await this.prisma.user.findUnique({ where: { id: challenge.userId } });
       if (!user || user.status !== 'ACTIVE' || !user.totpEnabled || !user.totpSecret)
         throw new UnauthorizedException('Unauthorized');
       if (user.lockedUntil && user.lockedUntil > new Date()) throw new UnauthorizedException('Akun terkunci sementara');
-      if (!verifyTotp(user.totpSecret, code)) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { failedLogins: { increment: 1 }, ...(user.failedLogins + 1 >= Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5) ? { lockedUntil: new Date(Date.now() + Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15) * 60_000) } : {}) },
+      if (!verifyTotp(openTotpSecret(user.totpSecret), code)) {
+        const cur = await this.prisma.twoFaChallenge.update({
+          where: { id: pendingToken },
+          data: { attempts: { increment: 1 } },
+          select: { attempts: true },
         });
-        throw new UnauthorizedException('Kode salah');
+        if (cur.attempts >= 5) keepConsumed = true;
+        await this.registerFailedLogin(user.id);
+        throw new UnauthorizedException(keepConsumed ? 'Terlalu banyak salah — login ulang' : 'Kode salah');
       }
       await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
       return { ...(await this.issueTokens(user.id)), mustChangePassword: user.mustChangePassword };

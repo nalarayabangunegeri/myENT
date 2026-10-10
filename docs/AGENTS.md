@@ -64,7 +64,7 @@ bun --filter api seed            # bun prisma/seed.ts
 # Admin
 bun --filter admin lint
 bun --filter admin build
-bun --filter admin dev           # :3102, butuh API_URL ke API :3100
+bun --filter admin dev           # :3102, butuh API_URL ke API :3000
 
 # Mobile
 flutter analyze
