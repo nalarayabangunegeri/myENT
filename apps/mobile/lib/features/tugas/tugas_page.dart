@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_client.dart';
@@ -22,6 +23,7 @@ class _TugasPageState extends State<TugasPage>
   List kumpul = [];
   List barang = [];
   List pinjamku = [];
+  String? err;
   @override
   void initState() {
     super.initState();
@@ -45,6 +47,8 @@ class _TugasPageState extends State<TugasPage>
       if (results[2] != null) kumpul = results[2];
       if (results[3] != null) barang = results[3];
       if (results[4] != null) pinjamku = results[4];
+      // Semua gagal (bukan kosong): tampilkan, jangan daftar sunyi.
+      err = results.every((v) => v == null) ? 'Gagal memuat — tarik untuk coba lagi' : null;
     });
   }
 
@@ -71,7 +75,7 @@ class _TugasPageState extends State<TugasPage>
     );
     final f = files.firstOrNull?.path;
     if (f == null) return;
-    if (File(f).lengthSync() > 5 * 1024 * 1024) {
+    if (await File(f).length() > 5 * 1024 * 1024) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('File maksimal 5 MB')));
       return;
     }
@@ -114,7 +118,11 @@ class _TugasPageState extends State<TugasPage>
       if (ok != true) return;
       final x = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 1280);
       if (x == null) return;
-      if (File(x.path).lengthSync() > 5 * 1024 * 1024) {
+      // Kompres seperti presensi: foto mentah HP 3-8 MB → ratusan KB.
+      final out = '${x.path}.jpg';
+      final r = await FlutterImageCompress.compressAndGetFile(x.path, out, quality: 80);
+      final foto = File(r?.path ?? x.path);
+      if (await foto.length() > 5 * 1024 * 1024) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Foto maksimal 5 MB')));
         return;
       }
@@ -126,7 +134,7 @@ class _TugasPageState extends State<TugasPage>
       await Api.postMultipart('/loans', {
         'itemId': '${item['id']}',
         'dueAt': due.toUtc().toIso8601String(),
-      }, File(x.path), 'photo');
+      }, foto, 'photo');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pinjaman aktif')));
       }
@@ -180,7 +188,18 @@ class _TugasPageState extends State<TugasPage>
           ],
         ),
       ),
-      body: TabBarView(
+      body: Column(
+        children: [
+          if (err != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(color: badBg, borderRadius: BorderRadius.all(Radius.circular(12))),
+              child: Text(err!, style: const TextStyle(fontSize: 12, color: badFg)),
+            ),
+          Expanded(
+            child: TabBarView(
         controller: tab,
         children: [
           _list(
@@ -311,6 +330,9 @@ class _TugasPageState extends State<TugasPage>
                     ],
                   ),
                 ),
+        ],
+            ),
+          ),
         ],
       ),
     );

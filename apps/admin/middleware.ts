@@ -18,7 +18,7 @@ function tokenAlive(v: string | undefined): boolean {
 
 export function middleware(req: NextRequest) {
   const p = req.nextUrl.pathname;
-  if (p.startsWith('/login') || p.startsWith('/api/')) return NextResponse.next();
+  if (p.startsWith('/login') || p.startsWith('/reset') || p.startsWith('/api/')) return NextResponse.next();
   // Lolos bila access masih hidup ATAU refresh (opaque) ada — proxy akan refresh diam-diam.
   if (!tokenAlive(req.cookies.get('access')?.value) && !req.cookies.get('refresh')?.value) {
     return NextResponse.redirect(new URL('/login', req.url));

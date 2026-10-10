@@ -101,7 +101,7 @@ export default function Shell({ children }: { children: ReactNode }) {
       .filter((g) => g.items.length);
   }, [q]);
 
-  if (path === '/login') {
+  if (path === '/login' || path.startsWith('/reset')) {
     return <div className="min-h-screen grid place-items-center p-4">{children}</div>;
   }
 

@@ -21,6 +21,10 @@ export class MaterialsService {
 
   async create(actorId: string, title: string, description: string, meetingId: string | undefined, file: Buffer) {
     if (!file?.length) throw new BadRequestException('File PDF wajib');
+    if (meetingId) {
+      const m = await this.prisma.meeting.findFirst({ where: { id: meetingId, deletedAt: null }, select: { id: true } });
+      if (!m) throw new BadRequestException('Meeting tidak ditemukan');
+    }
     const maxMb = await this.config.get<number>('max_material_mb');
     if (file.length > maxMb * 1024 * 1024) throw new BadRequestException(`Maksimal ${maxMb} MB`);
     if (!isPdf(file)) throw new BadRequestException('Materi harus PDF');

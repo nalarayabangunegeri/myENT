@@ -27,17 +27,26 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function dl(url: string, filename: string) {
-  const r = await fetch(url);
-  if (r.status === 401) {
-    location.href = '/login';
-    throw new Error('Sesi habis');
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 30_000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (r.status === 401) {
+      location.href = '/login';
+      throw new Error('Sesi habis');
+    }
+    if (!r.ok) throw new Error(`Unduhan gagal (${r.status})`);
+    const blob = await r.blob();
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = filename;
+    // Firefox/Safari abaikan click pada node detached — pasang dulu.
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 5_000);
+  } finally {
+    clearTimeout(t);
   }
-  if (!r.ok) throw new Error(`Unduhan gagal (${r.status})`);
-  const blob = await r.blob();
-  const u = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = u;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(u), 5_000);
 }

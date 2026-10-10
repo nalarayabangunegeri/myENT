@@ -11,7 +11,8 @@ export default function Members() {
   const [page, setPage] = useState(1);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
-  const [form, setForm] = useState({ nim: '', name: '', password: '', role: 'MEMBER' });
+  const [form, setForm] = useState({ nim: '', name: '', email: '', password: '', role: 'MEMBER' });
+  const [temp, setTemp] = useState<{ name: string; pass: string } | null>(null);
   const load = (p = 1, s = q) => {
     setErr('');
     api<{ data: any[]; total: number }>(`users?limit=${LIMIT}&page=${p}${s ? `&search=${encodeURIComponent(s)}` : ''}`)
@@ -29,9 +30,19 @@ export default function Members() {
   async function create(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await api('users', { method: 'POST', body: JSON.stringify(form) });
-      setForm({ nim: '', name: '', password: '', role: 'MEMBER' });
+      await api('users', { method: 'POST', body: JSON.stringify({ ...form, email: form.email || undefined }) });
+      setForm({ nim: '', name: '', email: '', password: '', role: 'MEMBER' });
       load(1);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  async function resetPass(u: any) {
+    if (!confirm(`Reset password ${u.name}? Sesi-nya dicabut dan wajib ganti saat login berikutnya.`)) return;
+    try {
+      const r = await api<{ temporaryPassword: string }>('auth/reset-password', { method: 'POST', body: JSON.stringify({ userId: u.id }) });
+      setTemp({ name: u.name, pass: r.temporaryPassword });
     } catch (e: any) {
       setErr(e.message);
     }
@@ -71,14 +82,23 @@ export default function Members() {
         actions={<label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Import CSV<input type="file" accept=".csv" className="hidden" onChange={csv} /></label>}
       />
       <Err msg={err} />
+      {temp && (
+        <div className="rounded-xl border border-gold-400/60 bg-gold-100 p-3 text-sm">
+          Password sementara untuk <b>{temp.name}</b> (sekali tampil, segera ganti):{' '}
+          <code className="rounded bg-white px-2 py-0.5 font-mono font-bold">{temp.pass}</code>{' '}
+          <button className="font-medium text-brand-700 hover:text-brand-800" onClick={() => { navigator.clipboard?.writeText(temp.pass).catch(() => {}); }}>Salin</button>{' '}
+          <button className="text-gray-500 hover:text-gray-700" onClick={() => setTemp(null)}>Tutup</button>
+        </div>
+      )}
       <Card className="p-4">
         <div className="flex flex-wrap gap-2">
           <input className={`${field} w-full sm:w-64`} placeholder="Cari nama/NIM" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load(1)} />
           <Btn onClick={() => load(1)}>Cari</Btn>
         </div>
-        <form onSubmit={create} className="mt-3 grid gap-2 md:grid-cols-5">
+        <form onSubmit={create} className="mt-3 grid gap-2 md:grid-cols-3">
           <input className={field} placeholder="NIM" value={form.nim} onChange={(e) => setForm({ ...form, nim: e.target.value })} required />
           <input className={field} placeholder="Nama" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          <input className={field} type="email" placeholder="Email (untuk reset password)" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input className={field} type="password" placeholder="Password (min 10)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={10} />
           <select className={field} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
             <option>MEMBER</option><option>OFFICER</option><option>ADMIN</option>
@@ -99,13 +119,18 @@ export default function Members() {
                         <Avatar name={u.name} />
                         <span className="leading-tight">
                           <span className="block font-medium">{u.name}</span>
-                          <span className="block text-xs text-gray-400">{u.nim}</span>
+                          <span className="block text-xs text-gray-400">{u.nim}{u.email ? ` · ${u.email}` : ''}</span>
                         </span>
                       </span>
                     </td>
                     <td className="py-2.5 pr-2"><StatusPill value={u.role} /></td>
                     <td className="py-2.5 pr-2"><StatusPill value={u.status} /></td>
-                    <td className="py-2.5"><button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => confirm(`${u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'} ${u.name}?`) && toggleActive(u)}>{u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}</button></td>
+                    <td className="py-2.5">
+                      <span className="flex gap-3">
+                        <button className="font-medium text-brand-700 hover:text-brand-800" onClick={() => resetPass(u)}>Reset</button>
+                        <button className="font-medium text-rose-600 hover:text-rose-800" onClick={() => confirm(`${u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'} ${u.name}?`) && toggleActive(u)}>{u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

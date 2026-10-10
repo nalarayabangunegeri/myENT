@@ -12,6 +12,8 @@ export default function MeetingDetail({ params }: { params: Promise<{ id: string
   const [err, setErr] = useState('');
   const [loc, setLoc] = useState({ latitude: '', longitude: '', radiusM: '' });
   const [sel, setSel] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [fails, setFails] = useState<any[]>([]);
   const [adj, setAdj] = useState({ userId: '', status: 'PERMITTED', reason: '' });
   const load = () => {
     setErr('');
@@ -33,20 +35,24 @@ export default function MeetingDetail({ params }: { params: Promise<{ id: string
     }
   }
 
-  async function bulk() {
-    if (!sel.length || !confirm(`Proses ${sel.length} request?`)) return;
+  async function bulk(action: 'approve' | 'reject') {
+    if (busy || !sel.length || !confirm(`${action === 'approve' ? 'Setujui' : 'Tolak'} ${sel.length} request?`)) return;
+    setBusy(true);
+    setFails([]);
     try {
       const r = await api<{ results: any[] }>('absence-requests/bulk', {
         method: 'POST',
-        body: JSON.stringify({ action: 'approve', ids: sel }),
+        body: JSON.stringify({ action, ids: sel }),
       });
       const fail = r.results.filter((x: any) => x.status !== 'ok');
-      if (fail.length) setErr(`${fail.length} gagal — lihat konsol`);
-      console.log(r.results);
+      setFails(fail);
+      if (fail.length) setErr(`${fail.length} dari ${r.results.length} gagal (lihat daftar)`);
       setSel([]);
       load();
     } catch (e: any) {
       setErr(e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -95,9 +101,20 @@ export default function MeetingDetail({ params }: { params: Promise<{ id: string
       <PageHeader
         title="Detail Kegiatan"
         sub={`${reqs.filter((r) => r.status === 'PENDING').length} request pending · ${att.length} kehadiran`}
-        actions={<Btn primary onClick={bulk}>Approve terpilih ({sel.length})</Btn>}
+        actions={<span className="flex gap-2">
+          <Btn primary onClick={() => bulk('approve')} disabled={busy || !sel.length}>Approve terpilih ({sel.length})</Btn>
+          <Btn onClick={() => bulk('reject')} disabled={busy || !sel.length}>Tolak terpilih</Btn>
+        </span>}
       />
       <Err msg={err} />
+      {fails.length > 0 && (
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold text-rose-700">Gagal diproses ({fails.length})</h2>
+          <ul className="list-disc pl-5 text-sm text-gray-600">
+            {fails.map((f: any) => <li key={f.id}>{reqs.find((r) => r.id === f.id)?.user?.name ?? f.id} — {f.reason}</li>)}
+          </ul>
+        </Card>
+      )}
       <div className="flex flex-wrap gap-4">
         {qr && <Card className="p-3"><img src={qr} alt="QR presensi" className="h-32 w-32" /></Card>}
         <Card className="min-w-72 flex-1 p-4">

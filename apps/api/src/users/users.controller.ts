@@ -156,6 +156,7 @@ export class UsersController {
 
   // Import CSV via JSON body (tanpa multipart — ponytail: cukup untuk M1).
   // Hasil per baris; maks 100 baris (konvensi bulk PRD §15.7).
+  // Batch: 1 cek duplikat + 1 createMany + 1 audit (bukan N×(bcrypt+insert+audit)).
   @Post('import')
   async import(@Req() req: any, @Body() dto: ImportDto) {
     const { rows, errors } = parseMemberCsv(dto.csv);
@@ -165,20 +166,30 @@ export class UsersController {
     }
     const results: { nim: string; status: 'ok' | 'failed'; reason?: string; temporaryPassword?: string }[] =
       errors.map((e) => ({ nim: `baris ${e.line}`, status: 'failed' as const, reason: e.reason }));
-    for (const r of rows) {
-      try {
-        const temp = randomBytes(9).toString('base64url');
-        await this.prisma.user.create({
-          data: {
-            nim: r.nim, name: r.name, division: r.division, cohortYear: r.cohortYear, email: r.email ?? null,
-            passwordHash: await bcrypt.hash(temp, 10), role: 'MEMBER', mustChangePassword: true,
-          },
-        });
-        await this.audit.log({ actorId: req.user.id, action: 'user.create', entity: 'User', entityId: r.nim, newValue: { via: 'csv' } as any });
-        results.push({ nim: r.nim, status: 'ok', temporaryPassword: temp });
-      } catch {
-        results.push({ nim: r.nim, status: 'failed', reason: 'NIM duplikat atau tidak valid' });
-      }
+    const have = new Set(
+      (await this.prisma.user.findMany({ where: { nim: { in: rows.map((r) => r.nim) } }, select: { nim: true } }))
+        .map((u) => u.nim),
+    );
+    for (const r of rows.filter((x) => have.has(x.nim)))
+      results.push({ nim: r.nim, status: 'failed', reason: 'NIM duplikat atau tidak valid' });
+    const fresh = rows.filter((r) => !have.has(r.nim));
+    const hashed = await Promise.all(fresh.map(async (r) => {
+      const temp = randomBytes(9).toString('base64url');
+      return { r, temp, hash: await bcrypt.hash(temp, 10) };
+    }));
+    if (hashed.length) {
+      await this.prisma.user.createMany({
+        data: hashed.map(({ r, hash }) => ({
+          nim: r.nim, name: r.name, division: r.division, cohortYear: r.cohortYear, email: r.email ?? null,
+          passwordHash: hash, role: 'MEMBER' as const, mustChangePassword: true,
+        })),
+        skipDuplicates: true, // balapan import konkuren: baris tabrakan dilewati, tak 500.
+      });
+      await this.audit.log({
+        actorId: req.user.id, action: 'user.import', entity: 'User',
+        entityId: `${hashed.length} via csv`, newValue: { count: hashed.length } as any,
+      });
+      for (const { r, temp } of hashed) results.push({ nim: r.nim, status: 'ok', temporaryPassword: temp });
     }
     return { total: results.length, results };
   }

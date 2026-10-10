@@ -20,6 +20,14 @@ class Api {
   // Emulator Android: 10.0.2.2. HP fisik: ganti via --dart-define=API_URL=http://<lan-ip>:3000
   static const base = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:3000');
   static Future<bool>? _refreshing;
+  // Dipasang sekali di main(): sesi dibersihkan + kembali ke /login saat server paksa ganti password.
+  static void Function()? onMustChange;
+
+  static void _mustChange() {
+    try {
+      onMustChange?.call();
+    } catch (_) {}
+  }
 
   static Future<bool> _doRefresh() {
     _refreshing ??= () async {
@@ -66,7 +74,10 @@ class Api {
     if (r.statusCode >= 200 && r.statusCode < 300) return body;
     final raw = body is Map ? body['message'] : null;
     final msg = raw is List ? raw.join(', ') : (raw?.toString() ?? 'Gagal');
-    if (r.statusCode == 401 && msg.contains('MUST_CHANGE_PASSWORD')) throw MustChange();
+    if (r.statusCode == 401 && msg.contains('MUST_CHANGE_PASSWORD')) {
+      _mustChange();
+      throw MustChange();
+    }
     throw ApiException(r.statusCode, msg);
   }
 
@@ -104,6 +115,10 @@ class Api {
       final b = jsonDecode(utf8.decode(r.bodyBytes));
       if (b is Map && b['message'] != null) msg = b['message'].toString();
     } catch (_) {}
+    if (r.statusCode == 401 && msg.contains('MUST_CHANGE_PASSWORD')) {
+      _mustChange();
+      throw MustChange();
+    }
     throw ApiException(r.statusCode, msg);
   }
 
@@ -114,7 +129,7 @@ class Api {
     if (a != null) req.headers['authorization'] = 'Bearer $a';
     req.fields.addAll(fields);
     if (file != null) req.files.add(await http.MultipartFile.fromPath(field, file.path));
-    final streamed = await req.send().timeout(const Duration(seconds: 30));
+    final streamed = await req.send().timeout(const Duration(seconds: 60));
     return http.Response.fromStream(streamed);
   }
 

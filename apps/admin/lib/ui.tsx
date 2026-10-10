@@ -85,18 +85,19 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: strin
   );
 }
 
-export function Btn({ children, href, primary, onClick }: {
+export function Btn({ children, href, primary, onClick, disabled }: {
   children: ReactNode;
   href?: string;
   primary?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   const cls = primary
     ? 'bg-brand-700 text-white hover:bg-brand-800 shadow-sm'
     : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50';
-  const c = `inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition ${cls}`;
+  const c = `inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition disabled:opacity-50 ${cls}`;
   if (href) return <a href={href} className={c}>{children}</a>;
-  return <button type="button" onClick={onClick} className={c}>{children}</button>;
+  return <button type="button" onClick={onClick} disabled={disabled} className={c}>{children}</button>;
 }
 
 // Kelas input standar — pakai untuk input/select/textarea.

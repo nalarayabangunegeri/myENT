@@ -28,6 +28,10 @@ export class AssignmentsService {
 
   async create(actorId: string, title: string, description: string, meetingId: string | undefined, deadline: Date, file?: Buffer) {
     if (!(deadline instanceof Date) || isNaN(+deadline)) throw new BadRequestException('Deadline tidak valid');
+    if (meetingId) {
+      const m = await this.prisma.meeting.findFirst({ where: { id: meetingId, deletedAt: null }, select: { id: true } });
+      if (!m) throw new BadRequestException('Meeting tidak ditemukan');
+    }
     let attachmentKey: string | undefined;
     if (file?.length) {
       const maxMb = await this.config.get<number>('max_material_mb');

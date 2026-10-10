@@ -23,8 +23,11 @@ export class JwtAuthGuard implements CanActivate {
       if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException('Unauthorized');
       req.user = user;
       // PRD §6.1: paksa ganti password sementara, kecuali endpoint allowlist.
-      const allow = ['/auth/change-password', '/auth/logout', '/auth/refresh'];
-      if (user.mustChangePassword && !allow.some((p) => req.url.startsWith(p)))
+      // Samakan path persis (tanpa query) — prefix rapuh terhadap /auth/change-passwordXYZ.
+      // /auth/me ikut allowlist: baca profil sendiri (tanpa secret) agar client/BFF bisa deteksi status.
+      const allow = ['/auth/change-password', '/auth/logout', '/auth/refresh', '/auth/me'];
+      const path = (req.url as string).split('?')[0];
+      if (user.mustChangePassword && !allow.includes(path))
         throw new UnauthorizedException('MUST_CHANGE_PASSWORD');
       return true;
     } catch (e: any) {

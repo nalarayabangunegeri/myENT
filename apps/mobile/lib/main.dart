@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -23,6 +24,11 @@ Future<void> registerFcmToken() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Wajib ganti password: satu pintu — sesi dibersihkan + kembali ke login (form ganti muncul setelah login).
+  Api.onMustChange = () {
+    unawaited(Session.clear());
+    navKey.currentState?.pushNamedAndRemoveUntil('/login', (_) => false);
+  };
   // FCM opsional: tanpa google-services tetap jalan (push mati, in-app tetap ada).
   try {
     await Firebase.initializeApp();

@@ -19,6 +19,7 @@ export default function Login() {
   const [need2fa, setNeed2fa] = useState('');
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
+  const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
   const router = useRouter();
 
@@ -53,6 +54,26 @@ export default function Login() {
       gate(d.user?.role);
     } finally {
       window.turnstile?.reset();
+      setBusy(false);
+    }
+  }
+
+  async function forgot() {
+    if (busy || !nim.trim()) {
+      if (!nim.trim()) setErr('Isi NIM dulu untuk reset via email');
+      return;
+    }
+    setBusy(true);
+    setErr('');
+    setInfo('');
+    try {
+      await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nim: nim.trim() }),
+      });
+      setInfo('Bila NIM terdaftar dan ada email, tautan reset (1 jam) terkirim.');
+    } finally {
       setBusy(false);
     }
   }
@@ -128,6 +149,7 @@ export default function Login() {
         </p>
         <div className="mt-5">
           <Err msg={err} />
+          {info && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-inset ring-emerald-200">{info}</p>}
         </div>
         {need2fa ? (
           <form onSubmit={verify} className="flex flex-col gap-3">
@@ -169,6 +191,7 @@ export default function Login() {
               <p className="text-xs text-amber-700">Turnstile belum dikonfigurasi (dev saja).</p>
             )}
             <button className={btn} disabled={busy}>Masuk</button>
+            <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-800 disabled:opacity-50" disabled={busy} onClick={forgot}>Lupa password? Reset via email</button>
           </form>
         ) : (
           <form onSubmit={change} className="flex flex-col gap-3">

@@ -9,16 +9,23 @@ export default function Inventory() {
   const [err, setErr] = useState('');
   const [form, setForm] = useState({ name: '', code: '', category: '' });
   const [filter, setFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 20;
   const [ret, setRet] = useState<{ id: string; damaged: boolean; note: string } | null>(null);
   const [hist, setHist] = useState<any[]>([]);
   const load = () => {
     api<any[]>('items').then(setItems).catch((e) => setErr(e.message));
-    api<any>(`loans${filter ? `?status=${filter}` : ''}`).then((r) => setLoans(Array.isArray(r) ? r : r.data ?? [])).catch((e) => setErr(e.message));
+    const q = [`page=${page}`, `limit=${LIMIT}`, ...(filter ? [`status=${filter}`] : [])].join('&');
+    api<any>(`loans?${q}`).then((r) => {
+      setLoans(Array.isArray(r) ? r : r.data ?? []);
+      setTotal(Array.isArray(r) ? r.length : r.total ?? 0);
+    }).catch((e) => setErr(e.message));
   };
   useEffect(load, []);
   useEffect(() => {
     load();
-  }, [filter]);
+  }, [filter, page]);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -107,7 +114,7 @@ export default function Inventory() {
       <Card className="p-4">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold">Pinjaman</h2>
-          <select className={field} aria-label="Filter status pinjaman" value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <select className={field} aria-label="Filter status pinjaman" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
             <option value="">Semua</option><option>ACTIVE</option><option>OVERDUE</option><option>RETURNED</option>
           </select>
         </div>
@@ -145,6 +152,13 @@ export default function Inventory() {
                 ))}
               </tbody>
             </table>
+            <div className="mt-3 flex items-center justify-between text-sm text-gray-500">
+              <span>Halaman {page} · {total} pinjaman</span>
+              <span className="flex gap-2">
+                <Btn onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>‹ Prev</Btn>
+                <Btn onClick={() => setPage((p) => p + 1)} disabled={page * LIMIT >= total}>Next ›</Btn>
+              </span>
+            </div>
           </div>
         )}
       </Card>

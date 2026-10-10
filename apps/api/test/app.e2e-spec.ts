@@ -53,6 +53,21 @@ describe('vertical slice (e2e)', () => {
     await request(app.getHttpServer()).post('/auth/privacy-consent').set('Authorization', `Bearer ${memberT}`).expect(200);
   });
 
+  it('email tersimpan saat create + tampil di list (untuk reset via email)', async () => {
+    const nim = `e${uniq()}`;
+    const email = `${nim}@test.id`;
+    await request(app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminT}`)
+      .send({ nim, name: 'E2E Email', password: 'EmailPass123!', email })
+      .expect(201);
+    const list = await request(app.getHttpServer())
+      .get(`/users?search=${nim}`)
+      .set('Authorization', `Bearer ${adminT}`)
+      .expect(200);
+    expect(list.body.data[0].email).toBe(email);
+  });
+
   it('meeting dibuat + publish + terlihat member', async () => {
     const now = Date.now();
     const m = await request(app.getHttpServer())

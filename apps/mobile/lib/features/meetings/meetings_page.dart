@@ -84,6 +84,7 @@ class _MeetingsPageState extends State<MeetingsPage> {
       final mid = jsonDecode(
         utf8.decode(base64Url.decode(_norm(payload))),
       )['mid'];
+      if (mid is! String || mid.isEmpty) throw const FormatException('QR tak dikenal');
       final m = await Api.get("/meetings/$mid");
       if (!mounted) return;
       await nav.push(
@@ -94,6 +95,9 @@ class _MeetingsPageState extends State<MeetingsPage> {
       _load();
     } on ApiException catch (e) {
       msg.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      // QR asing/rusak (base64/JSON gagal): jangan crash, cukup tolak.
+      msg.showSnackBar(const SnackBar(content: Text('QR tidak valid')));
     }
   }
 

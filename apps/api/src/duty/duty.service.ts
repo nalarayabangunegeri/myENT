@@ -33,31 +33,37 @@ export class DutyService {
     if (!members.length) throw new BadRequestException('Tidak ada anggota aktif');
     const open = dto.openTime ?? '06:00';
     const close = dto.closeTime ?? '22:00';
-    let made = 0;
-    for (let d = 0; d < dto.days; d++) {
-      const day = new Date(dto.startDate.getTime() + d * 86400_000);
-      const m = await this.prisma.meeting.create({
-        data: {
-          title: `${dto.titlePrefix ?? 'Piket'} ${day.toISOString().slice(0, 10)}`,
-          startAt: this.at(day, open),
-          endAt: this.at(day, close),
-          attendanceOpenAt: this.at(day, open),
-          attendanceCloseAt: this.at(day, close),
-          status: 'DRAFT',
-          isDuty: true,
-          createdBy: actorId,
-        },
-      });
-      for (let k = 0; k < perDay; k++) {
-        const u = members[(d * perDay + k) % members.length];
-        await this.prisma.dutyAssignment.create({ data: { meetingId: m.id, userId: u.id } });
+    // Satu transaksi: meeting + assignment + audit atomic; assignment via createMany (bukan N insert).
+    const made = await this.prisma.$transaction(async (tx: any) => {
+      let n = 0;
+      const assigns: { meetingId: string; userId: string }[] = [];
+      for (let d = 0; d < dto.days; d++) {
+        const day = new Date(dto.startDate.getTime() + d * 86400_000);
+        const m = await tx.meeting.create({
+          data: {
+            title: `${dto.titlePrefix ?? 'Piket'} ${day.toISOString().slice(0, 10)}`,
+            startAt: this.at(day, open),
+            endAt: this.at(day, close),
+            attendanceOpenAt: this.at(day, open),
+            attendanceCloseAt: this.at(day, close),
+            status: 'DRAFT',
+            isDuty: true,
+            createdBy: actorId,
+          },
+        });
+        for (let k = 0; k < perDay; k++) {
+          const u = members[(d * perDay + k) % members.length];
+          assigns.push({ meetingId: m.id, userId: u.id });
+        }
+        n++;
       }
-      made++;
-    }
-    await this.audit.log({
-      actorId, action: 'duty.roster', entity: 'Meeting', entityId: `${dto.days} hari`,
-      newValue: { days: dto.days, perDay, division: dto.division ?? null } as any,
-    });
+      if (assigns.length) await tx.dutyAssignment.createMany({ data: assigns, skipDuplicates: true });
+      await this.audit.log({
+        actorId, action: 'duty.roster', entity: 'Meeting', entityId: `${dto.days} hari`,
+        newValue: { days: dto.days, perDay, division: dto.division ?? null } as any,
+      }, tx);
+      return n;
+    }, { timeout: 30_000 });
     return { meetings: made };
   }
 

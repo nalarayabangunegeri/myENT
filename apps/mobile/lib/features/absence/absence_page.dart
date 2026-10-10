@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
@@ -51,9 +53,12 @@ class _AbsencePageState extends State<AbsencePage> {
     String? mid = list.isNotEmpty ? list.first['id'] : null;
     String tipe = alasan.first;
     final detail = TextEditingController();
+    String? lampirPath;
+    String? lampirNama;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
         title: const Text('Ajukan izin'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -84,6 +89,41 @@ class _AbsencePageState extends State<AbsencePage> {
               controller: detail,
               decoration: const InputDecoration(labelText: 'Keterangan'),
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    lampirNama ?? 'Lampiran opsional (foto/PDF)',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final files = await FilePicker.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                    );
+                    final p = files.firstOrNull?.path;
+                    if (p == null) return;
+                    if (await File(p).length() > 5 * 1024 * 1024) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('Lampiran maksimal 5 MB')),
+                        );
+                      }
+                      return;
+                    }
+                    setD(() {
+                      lampirPath = p;
+                      lampirNama = files.firstOrNull?.name;
+                    });
+                  },
+                  child: const Text('Pilih'),
+                ),
+              ],
+            ),
           ],
         ),
         actions: [
@@ -96,6 +136,7 @@ class _AbsencePageState extends State<AbsencePage> {
             child: const Text('Kirim'),
           ),
         ],
+        ),
       ),
     );
     if (ok != true || mid == null) return;
@@ -103,7 +144,7 @@ class _AbsencePageState extends State<AbsencePage> {
       await Api.postMultipart(
         "/meetings/$mid/absence-requests",
         {'reasonType': tipe, 'reasonDetail': detail.text},
-        null,
+        lampirPath == null ? null : File(lampirPath!),
         'attachment',
       );
       if (mounted) _load();
